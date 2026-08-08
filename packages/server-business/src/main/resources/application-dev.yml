@@ -1,0 +1,17 @@
+# 开发环境配置（按实际 MySQL / Redis / 树莓派地址修改）
+mysql:
+  host: localhost
+  port: 3306
+  database: red_tour
+  username: root
+  password: root
+
+redis:
+  host: localhost
+  port: 6379
+  database: 0
+
+hardware:
+  tcp:
+    host: 127.0.0.1
+    port: 9000

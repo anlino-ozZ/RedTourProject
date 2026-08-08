@@ -1,0 +1,62 @@
+# ===== 依赖目录 =====
+node_modules/
+**/node_modules/
+
+# ===== Python 虚拟环境与缓存 =====
+venv/
+.venv/
+env/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+
+# ===== AI 大模型文件 / 权重 / 编译产物 =====
+*.pt
+*.pth
+*.onnx
+*.bin
+*.safetensors
+*.gguf
+packages/ai-engine/models/
+packages/ai-engine/weights/
+packages/ai-engine/wiki_build/
+ollama_models/
+
+# ===== 树莓派硬件镜像 / 系统镜像 =====
+*.img
+*.iso
+hardware-images/
+
+# ===== Java / Maven 构建产物 =====
+target/
+*.class
+
+# ===== 前端构建产物 =====
+dist/
+dist-ssr/
+build/
+
+# ===== 日志与临时文件 =====
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.DS_Store
+
+# ===== 环境变量 / 密钥（保留 .env.example） =====
+.env
+.env.local
+.env.*.local
+!.env.example
+
+# ===== IDE / 编辑器 =====
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# ===== 操作系统 =====
+Thumbs.db
+desktop.ini

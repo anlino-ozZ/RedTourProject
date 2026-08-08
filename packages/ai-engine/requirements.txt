@@ -1,0 +1,12 @@
+# ===== ai-engine 依赖清单 =====
+fastapi                      # Web 框架，提供引擎推理接口
+uvicorn[standard]            # ASGI 服务器
+ollama                       # Ollama Python SDK，调用本地大模型
+ultralytics                  # YOLOv8-pose 姿态检测
+pillow                       # 图像处理
+numpy                        # 数值计算
+pydantic                     # 数据校验
+pydantic-settings            # 基于环境变量的配置管理
+markdown-it-py               # Markdown 渲染/解析（Wiki 页面处理）
+# hailo-platform              # Hailo8L 加速库，仅树莓派环境按需安装
+                              # （非树莓派开发机无需安装，代码中已做 try-except 降级）

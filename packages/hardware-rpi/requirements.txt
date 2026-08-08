@@ -1,0 +1,7 @@
+# ===== hardware-rpi 依赖清单 =====
+# 注意：以下依赖仅树莓派环境安装，开发机可跳过
+RPi.GPIO                    # 树莓派 GPIO 引脚控制（LED/按钮）
+pyserial                    # 串口通信
+pygame                      # 音频播放（背景音乐/TTS 音频）
+pydantic                    # 数据校验
+pydantic-settings           # 基于环境变量的配置管理

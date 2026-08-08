@@ -1,0 +1,25 @@
+{
+  "name": "red-tour-main",
+  "version": "1.0.0",
+  "private": true,
+  "description": "青年红色筑梦之旅-红色文旅智能导览系统 Monorepo 根工程（仅全局规范/脚本，不存放业务依赖）",
+  "scripts": {
+    "lint": "eslint \"packages/**/*.{ts,vue}\" \"public-common/**/*.{ts,vue}\"",
+    "format": "prettier --write \"packages/**/*.{ts,vue,json,md,less,css}\" \"public-common/**/*.{ts,vue,json,md,less,css}\" \"*.{js,json,md}\"",
+    "build:all": "bash scripts/build-all.sh",
+    "dev:h5": "npm --prefix packages/web-h5 run dev",
+    "dev:admin": "npm --prefix packages/web-admin run dev",
+    "dev:touch": "npm --prefix packages/web-touch run dev"
+  },
+  "devDependencies": {
+    "@typescript-eslint/eslint-plugin": "^7.18.0",
+    "@typescript-eslint/parser": "^7.18.0",
+    "@vue/eslint-config-typescript": "^13.0.0",
+    "eslint": "^8.57.0",
+    "eslint-plugin-vue": "^9.28.0",
+    "prettier": "^3.3.3"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}

@@ -1,0 +1,39 @@
+server:
+  port: 8000
+  servlet:
+    context-path: /
+
+spring:
+  profiles:
+    active: dev
+  datasource:
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    url: jdbc:mysql://${mysql.host}:${mysql.port}/${mysql.database}?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&useSSL=false
+    username: ${mysql.username}
+    password: ${mysql.password}
+  data:
+    redis:
+      host: ${redis.host}
+      port: ${redis.port}
+      password: ${redis.password:}
+      database: ${redis.database:0}
+
+mybatis:
+  mapper-locations: classpath:mapper/*.xml
+  configuration:
+    map-underscore-to-camel-case: true
+    log-impl: org.apache.ibatis.logging.stdout.StdOutImpl
+
+# AI 引擎 HTTP 地址（对接 packages/ai-engine :8001）
+ai-engine:
+  base-url: http://localhost:8001
+
+# 树莓派硬件 TCP 通信（对接 packages/hardware-rpi）
+hardware:
+  tcp:
+    host: ${hardware.tcp.host:127.0.0.1}
+    port: ${hardware.tcp.port:9000}
+
+logging:
+  level:
+    com.redtour.business: info

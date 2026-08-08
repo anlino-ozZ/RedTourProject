@@ -1,0 +1,24 @@
+{
+  "name": "@red-tour/common",
+  "version": "1.0.0",
+  "private": true,
+  "description": "红色文旅系统全局公共包：红色主题样式、公共组件、TS 类型、工具函数",
+  "main": "index.ts",
+  "types": "index.ts",
+  "exports": {
+    ".": "./index.ts",
+    "./style": "./style/index.less",
+    "./style/*": "./style/*",
+    "./components/*": "./components/*",
+    "./api-types": "./api-types/index.ts",
+    "./utils/*": "./utils/*"
+  },
+  "peerDependencies": {
+    "vue": "^3.4.0",
+    "vue-router": "^4.3.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.4.0",
+    "vue": "^3.4.0"
+  }
+}

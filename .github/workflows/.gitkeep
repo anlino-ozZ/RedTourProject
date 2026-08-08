@@ -1,0 +1,2 @@
+# GitHub Actions workflows 预留目录
+# 后续在此放置 CI/CD 流水线（如前端 lint+build、Python ruff 检查、树莓派自动部署等）

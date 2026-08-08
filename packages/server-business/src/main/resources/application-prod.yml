@@ -1,0 +1,17 @@
+# 生产环境配置（通过环境变量注入）
+mysql:
+  host: ${MYSQL_HOST:localhost}
+  port: ${MYSQL_PORT:3306}
+  database: ${MYSQL_DATABASE:red_tour}
+  username: ${MYSQL_USER:root}
+  password: ${MYSQL_PASSWORD:root}
+
+redis:
+  host: ${REDIS_HOST:localhost}
+  port: ${REDIS_PORT:6379}
+  database: ${REDIS_DATABASE:0}
+
+hardware:
+  tcp:
+    host: ${RPI_HOST:127.0.0.1}
+    port: ${RPI_TCP_PORT:9000}
