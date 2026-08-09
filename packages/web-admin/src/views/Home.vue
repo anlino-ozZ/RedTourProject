@@ -1,6 +1,6 @@
 <script setup lang="ts">
 // PC管理后台 占位首页
-import { RedCard, RedButton } from '@red-tour/common'
+import { RedCard, RedButton } from '@red-tour-project/common'
 
 function handleClick() {
   console.log('进入管理')

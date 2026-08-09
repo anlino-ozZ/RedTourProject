@@ -9,7 +9,7 @@ export default defineConfig({
     alias: {
       '@': fileURLToPath(new URL('./src', import.meta.url)),
       '@common': fileURLToPath(new URL('../../public-common', import.meta.url)),
-      '@red-tour/common': fileURLToPath(new URL('../../public-common', import.meta.url)),
+      '@red-tour-project/common': fileURLToPath(new URL('../../public-common', import.meta.url)),
     },
   },
   server: {

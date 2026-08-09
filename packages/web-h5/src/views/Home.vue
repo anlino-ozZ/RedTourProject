@@ -1,6 +1,6 @@
 <script setup lang="ts">
 // 游客移动端H5 占位首页
-import { RedCard, RedButton } from '@red-tour/common'
+import { RedCard, RedButton } from '@red-tour-project/common'
 
 function handleClick() {
   console.log('开始红色之旅')

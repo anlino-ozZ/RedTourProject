@@ -1,6 +1,6 @@
 <script setup lang="ts">
 // 触摸屏大屏 占位首页：超大字号 + 超大按钮
-import { RedCard, RedButton } from '@red-tour/common'
+import { RedCard, RedButton } from '@red-tour-project/common'
 
 function handleClick() {
   console.log('开始触摸导览')

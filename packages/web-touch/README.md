@@ -1,4 +1,4 @@
-# red-tour-web-touch
+# red-tour-project-web-touch
 
 青年红色筑梦之旅 - 红色文旅智能导览系统 · 触摸屏大屏端
 

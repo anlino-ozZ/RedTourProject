@@ -1,5 +1,5 @@
 {
-  "name": "red-tour-main",
+  "name": "red-tour-project",
   "version": "1.0.0",
   "private": true,
   "description": "青年红色筑梦之旅-红色文旅智能导览系统 Monorepo 根工程（仅全局规范/脚本，不存放业务依赖）",

@@ -4,12 +4,12 @@
 # 依赖：通过环境变量配置，或修改下方默认值
 #   RPI_HOST  树莓派地址（默认 redtour.local）
 #   RPI_USER  登录用户（默认 pi）
-#   RPI_PATH  远程部署目录（默认 /home/pi/red-tour）
+#   RPI_PATH  远程部署目录（默认 /home/pi/RedTourProject）
 set -e
 
 RPI_HOST="${RPI_HOST:-redtour.local}"
 RPI_USER="${RPI_USER:-pi}"
-RPI_PATH="${RPI_PATH:-/home/pi/red-tour}"
+RPI_PATH="${RPI_PATH:-/home/pi/RedTourProject}"
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 
 echo "==== 树莓派部署：${RPI_USER}@${RPI_HOST}:${RPI_PATH} ===="
@@ -29,7 +29,7 @@ rsync -avz --delete \
 
 # 3. 远程重启 systemd 服务（服务名按实际配置调整，不存在则跳过）
 echo "---- 远程重启服务 ----"
-ssh "${RPI_USER}@${RPI_HOST}" "sudo systemctl restart red-tour-hardware.service || true"
-ssh "${RPI_USER}@${RPI_HOST}" "sudo systemctl restart red-tour-engine.service || true"
+ssh "${RPI_USER}@${RPI_HOST}" "sudo systemctl restart red-tour-project-hardware.service || true"
+ssh "${RPI_USER}@${RPI_HOST}" "sudo systemctl restart red-tour-project-engine.service || true"
 
 echo "==== 部署完成 ===="

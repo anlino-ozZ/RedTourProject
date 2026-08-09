@@ -1,5 +1,5 @@
 /**
- * @red-tour/common 统一入口
+ * @red-tour-project/common 统一入口
  * 三套前端（web-h5 / web-admin / web-touch）统一从此引入公共组件、类型、工具
  */
 // 公共组件

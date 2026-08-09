@@ -1,5 +1,5 @@
 {
-  "name": "@red-tour/common",
+  "name": "@red-tour-project/common",
   "version": "1.0.0",
   "private": true,
   "description": "红色文旅系统全局公共包：红色主题样式、公共组件、TS 类型、工具函数",

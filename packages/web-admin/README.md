@@ -1,4 +1,4 @@
-# red-tour-web-admin
+# red-tour-project-web-admin
 
 青年红色筑梦之旅 - 红色文旅智能导览系统 · PC管理后台
 

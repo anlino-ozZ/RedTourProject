@@ -1,7 +1,7 @@
 <script setup lang="ts">
 // PC管理后台 根组件：顶部 RedNav + 左侧 el-menu 占位 + 主区 router-view
-import { RedNav } from '@red-tour/common'
-import type { NavItem } from '@red-tour/common'
+import { RedNav } from '@red-tour-project/common'
+import type { NavItem } from '@red-tour-project/common'
 
 const navItems: NavItem[] = [
   { title: '首页', path: '/' },

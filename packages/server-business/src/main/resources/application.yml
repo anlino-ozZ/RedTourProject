@@ -8,15 +8,25 @@ spring:
     active: dev
   datasource:
     driver-class-name: com.mysql.cj.jdbc.Driver
-    url: jdbc:mysql://${mysql.host}:${mysql.port}/${mysql.database}?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&useSSL=false
+    url: jdbc:mysql://${mysql.host}:${mysql.port}/${mysql.database}?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true
     username: ${mysql.username}
     password: ${mysql.password}
+    hikari:
+      minimum-idle: 2
+      maximum-pool-size: 20
+      connection-timeout: 10000
   data:
     redis:
       host: ${redis.host}
       port: ${redis.port}
       password: ${redis.password:}
       database: ${redis.database:0}
+      timeout: 3000
+  servlet:
+    multipart:
+      enabled: true
+      max-file-size: 50MB
+      max-request-size: 100MB
 
 mybatis:
   mapper-locations: classpath:mapper/*.xml
@@ -24,15 +34,31 @@ mybatis:
     map-underscore-to-camel-case: true
     log-impl: org.apache.ibatis.logging.stdout.StdOutImpl
 
-# AI 引擎 HTTP 地址（对接 packages/ai-engine :8001）
+# ===== JWT 配置（与 JwtUtil @Value 默认值保持一致，可在生产环境覆盖）=====
+jwt:
+  secret: ${JWT_SECRET:RedTourProject-default-secret-key-please-change-in-production-123456}
+  expire-hours: 2
+
+# ===== AI 引擎 HTTP 地址（对接 packages/ai-engine :8001）=====
 ai-engine:
   base-url: http://localhost:8001
+  connect-timeout-ms: 3000
+  read-timeout-ms: 30000
 
-# 树莓派硬件 TCP 通信（对接 packages/hardware-rpi）
+# ===== 树莓派硬件 TCP 通信（对接 packages/hardware-rpi）=====
 hardware:
   tcp:
-    host: ${hardware.tcp.host:127.0.0.1}
-    port: ${hardware.tcp.port:9000}
+    host: ${HARDWARE_TCP_HOST:127.0.0.1}
+    port: ${HARDWARE_TCP_PORT:9000}
+
+# ===== 文件上传根目录（管理端 /admin/uploads 接口使用）=====
+data:
+  upload:
+    path: ${DATA_UPLOAD_PATH:./uploads}
+    # 单文件大小限制二次校验（与 spring.servlet.multipart.max-file-size 保持一致或更小）
+    max-image-mb: 10
+    max-audio-mb: 50
+    max-wiki-mb: 20
 
 logging:
   level:

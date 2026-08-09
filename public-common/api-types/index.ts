@@ -54,6 +54,7 @@ export interface SpotInfo {
   latitude?: number
   audioUrl?: string
   wikiRef?: string // 关联 LLM Wiki 条目
+  wikiSummary?: string // 详情页返回：关联 Wiki 条目摘要文本
 }
 
 export interface GuideRoute {
@@ -63,6 +64,7 @@ export interface GuideRoute {
   spotIds: number[]
   duration: number // 预计时长（分钟）
   difficulty?: 'easy' | 'medium' | 'hard'
+  status?: 0 | 1 // 0 下线 / 1 上线（管理端使用）
 }
 
 // ===== 智能问答 =====
@@ -77,6 +79,7 @@ export interface AskResult {
   answer: string
   sources: string[] // 引用的 Wiki 条目
   durationMs: number
+  audioUrl?: string // useVoice=true 时返回：TTS 语音播报文件地址
 }
 
 // ===== 姿态识别（CV）=====
@@ -102,14 +105,136 @@ export interface Achievement {
   id: number
   title: string
   icon: string
+  description?: string
   unlocked: boolean
+  unlockedAt?: string // 解锁时间（ISO 字符串，未解锁为 null/undefined）
 }
 
 // ===== 硬件 / 设备状态 =====
 export interface DeviceStatus {
   deviceId: string
+  scenicAreaId: number // 绑定景区 ID
   online: boolean
   cpuTemp?: number
   memoryUsage?: number
-  lastHeartbeat: number
+  diskUsage?: number
+  hailoStatus?: string
+  cameraConnected?: boolean
+  speakerConnected?: boolean
+  lastHeartbeat: string // ISO 时间字符串，如 2026-08-08T15:00:25
+}
+
+// ===== 景区 =====
+export interface ScenicAreaInfo {
+  id: number
+  name: string
+  intro: string
+  longitude?: number
+  latitude?: number
+  address?: string
+  openHours?: string
+  coverImage?: string
+  status?: number
+}
+
+// ===== 文物 =====
+export interface ArtifactInfo {
+  id: number
+  name: string
+  era?: string
+  intro: string
+  images?: string[]
+  location?: string
+  category?: string
+  wikiRef?: string
+  wikiSummary?: string
+}
+
+// ===== 剧本 =====
+export interface ScriptRole {
+  id: number
+  name: string
+  avatar: string
+  skill?: string
+}
+
+export interface ScriptNode {
+  id: number
+  sceneText: string
+  options: { text: string; nextNodeId: number }[]
+}
+
+export interface ScriptInfo {
+  id: number
+  title: string
+  description?: string
+  coverImage?: string
+  roles: ScriptRole[]
+  startNodeId?: number
+  nodes?: ScriptNode[]
+  achievements?: Achievement[]
+}
+
+// ===== 导览打卡 =====
+export interface CheckinRequest {
+  spotId: number
+  longitude: number
+  latitude: number
+}
+
+export interface CheckinResult {
+  spotId: number
+  checked: boolean
+  progress: string
+  achievementUnlocked: Achievement | null
+}
+
+export interface RouteCompleteResult {
+  routeId: number
+  completed: boolean
+  duration: number
+  achievements: Achievement[]
+}
+
+// ===== 推荐问题 =====
+export interface RecommendationQuestion {
+  id: number
+  question: string
+}
+
+// ===== 个人中心 =====
+export interface ProfileInfo {
+  nickname: string
+  avatar?: string
+  totalVisits: number
+  totalCheckins: number
+  totalAchievements: number
+}
+
+export interface VisitRecord {
+  id: number
+  scenicAreaId: number
+  scenicAreaName: string
+  routeName?: string
+  spotCount: number
+  duration: number
+  createdAt: string
+}
+
+// ===== 特产订单 =====
+export interface ProductOrderResult {
+  orderId: number
+  status: string
+  createdAt: string
+}
+
+// ===== 姿态触发内容 =====
+export interface PoseTriggerContent {
+  title: string
+  audioUrl: string
+  wikiRef?: string
+}
+
+export interface PoseRecognizeResult extends PoseResult {
+  triggerContent?: PoseTriggerContent | null
 }

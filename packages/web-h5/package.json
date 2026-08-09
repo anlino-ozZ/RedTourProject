@@ -1,5 +1,5 @@
 {
-  "name": "red-tour-web-h5",
+  "name": "red-tour-project-web-h5",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -15,7 +15,7 @@
     "pinia": "^2.1.7",
     "axios": "^1.7.2",
     "element-plus": "^2.7.0",
-    "@red-tour/common": "file:../../public-common"
+    "@red-tour-project/common": "file:../../public-common"
   },
   "devDependencies": {
     "@vitejs/plugin-vue": "^5.0.4",

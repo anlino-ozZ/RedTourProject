@@ -56,6 +56,7 @@ yarn-error.log*
 .vscode/
 *.swp
 *.swo
+*.iml
 
 # ===== 操作系统 =====
 Thumbs.db

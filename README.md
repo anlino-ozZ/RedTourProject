@@ -1,4 +1,4 @@
-# 红色文旅智能导览系统（red-tour-main）
+# 红色文旅智能导览系统（RedTourProject）
 
 > 青年红色筑梦之旅 · 树莓派5 + Hailo8L 边缘离线 AI 文旅系统
 > 单仓库 Monorepo · 三端 Vue3 前端 + Java SpringBoot 业务后端 + Python AI 引擎 + Python 树莓派硬件脚本
@@ -29,8 +29,8 @@
 ## 三、仓库结构
 
 ```
-red-tour-main
-├── .github/ISSUE_TEMPLATE/   Issue 模板（feat / bug）
+RedTourProject
+├── .github/workflows/       CI 预留（暂无配置）
 ├── docs/                     精简开发文档（5 份）
 ├── scripts/                  一键打包 / 树莓派部署 / 模型同步脚本
 ├── public-common/            全局公共包（样式 / 组件 / 类型 / 工具）
@@ -50,37 +50,40 @@ red-tour-main
 
 ## 四、团队分工（5 人）
 
-| 成员 | 负责模块 | 仓库目录 |
-| --- | --- | --- |
-| 成员1 | 游客 H5 前端 | `packages/web-h5` |
-| 成员2 | PC 管理后台（运营商后台） | `packages/web-admin` |
-| 成员3 | 触摸屏大屏 + public-common 维护 | `packages/web-touch`、`public-common` |
-| 成员4 | 业务后端 + 数据库设计 | `packages/server-business` |
-| 成员5 | AI 算法引擎 + 树莓派硬件脚本 | `packages/ai-engine`、`packages/hardware-rpi` |
+| 成员 | 角色 | 负责模块 | 仓库目录 |
+| --- | --- | --- | --- |
+| 钟安琳（项目负责人） | 前端 / PM / AI 算法 | ① PC 管理后台 ② public-common 规范维护 ③ 项目进度统筹 + 需求对接 + 文档版本管理 | `packages/web-admin`、`public-common` |
+| 杨淑婷 | 后端 / AI 算法 | ① AI 引擎（Ollama/LLM Wiki/推理编排） ② 后端智能问答/知识库 CRUD 接口 ③ Wiki 编译与导入流程 | `packages/ai-engine`、`packages/server-business`（问答/知识库模块） |
+| 马培桦 | 前端 / 硬件 | ① 触摸屏大屏端 ② 树莓派硬件 UI 对接（姿态互动 / 设备状态 / 成就二维码） ③ Chromium kiosk 模式部署与调参 | `packages/web-touch` |
+| 杨弋伽 | 后端 / 硬件 | ① Java SpringBoot 业务后端主程（表结构统一设计 + 鉴权/景区/景点/路线/特产/订单/打卡点/成就/统计 全部 CRUD） ② 硬件 TCP 协议对接 + 心跳重连 + 离线数据同步 | `packages/server-business`（除问答/知识库外）、`packages/hardware-rpi` 协议联调 |
+| 倪佳音 | 前端 | ① 游客移动端 H5（由钟安琳带：先做静态页面 → 接口对接 → 导览/问答/个人中心 全流程） | `packages/web-h5` |
 
-> 数据库表结构由成员4 统一设计；各成员按需提交表需求并自行编写本人业务 CRUD SQL，不改动他人模块代码。
+> **数据库表结构由杨弋伽 统一设计**；各成员按需提交表需求并自行编写本人业务 CRUD SQL，不改动他人模块代码。
+> **需求&接口文档变更由钟安琳 统一登记**，成员只提需求不直接改 docs/，避免多人改同一文档冲突。
 
 ## 五、Git 分支规则
 
 - `main`：长期分支，仅存放迭代最终合并代码，**禁止直接 push**
 - `dev`：长期分支，日常开发集成
-- 功能分支：`feat/模块-功能`（如 `feat/admin-景点管理`）
-- 修复分支：`bugfix/模块-问题`（如 `bugfix/h5-语音播放卡顿`）
-- 模块简称：`h5` / `admin` / `touch` / `server` / `ai` / `rpi` / `common`
+- 功能分支：`feat/模块-功能-年月日-名字缩写`（如 `feat/Admin-ScenicManagement-20260809-ZAL`）
+- 修复分支：`bugfix/模块-功能-年月日-名字缩写`（如 `bugfix/H5-AudioPlaybackStuck-20260810-NJY`）
+- 分支名**全英文 + 大驼峰**，禁止中文；模块名首字母大写：`H5` / `Admin` / `Touch` / `Server` / `Ai` / `Rpi` / `Common`
+- 命名格式：`<类型>/<模块>-<功能描述>-<YYYYMMDD>-<姓名首字母大写缩写>`，功能描述用大驼峰，单词间不加连字符
+- 5 人名字缩写：`ZAL`（钟安琳）/ `YST`（杨淑婷）/ `MPH`（马培桦）/ `YYJ`（杨弋伽）/ `NJY`（倪佳音）
 
 标准开发流程：
 
 ```bash
 # 1. 基于 dev 拉取最新并切功能分支
 git checkout dev && git pull origin dev
-git checkout -b feat/admin-景点管理
+git checkout -b feat/Admin-ScenicManagement-20260809-ZAL
 
 # 2. 开发提交（仅提交本人业务代码与文档）
 git add <本人模块文件>
 git commit -m "feat(admin): 新增景点管理列表页"
 
 # 3. 推送并发起 PR 到 dev（至少一人 Review）
-git push origin feat/admin-景点管理
+git push origin feat/Admin-ScenicManagement-20260809-ZAL
 
 # 4. 迭代验收通过后，由负责人将 dev 合并至 main 并打 tag
 git checkout main && git merge dev && git tag v1.0.0
@@ -128,18 +131,15 @@ pip install -r requirements.txt
 python main.py
 ```
 
-## 七、Issue 规范
+## 七、任务管理
 
-Issue 标题强制格式：`【模块】描述`，模块取值：
-
-`【前端H5】【前端Admin】【前端Touch】【后端业务】【AI算法】【硬件Rpi】【通用】`
-
-模板见 `.github/ISSUE_TEMPLATE/feat.md` 与 `bug.md`。
+团队通过 **微信群沟通 + 群共享文档** 管理任务分配与进度，不使用 GitHub Issue。
+需求变更、接口调整、数据库改动等由钟安琳统一登记到共享文档，成员按文档认领任务。
 
 ## 八、文档说明
 
-仓库 `docs/` 仅存放**精简开发文档**（代码规范、UI 规范、架构与硬件清单、精简 PRD、接口文档）；
-完整业务 PRD、变更记录、风险表存放于**外部腾讯文档**，仓库不重复存储。
+仓库 `docs/` 存放开发文档（代码规范、UI 规范、架构与硬件清单、PRD 需求文档、接口文档）；
+完整业务 PRD 变更记录、风险表存放于**外部腾讯文档**，仓库不重复存储。（暂时还没有这两个表）
 
 ## 九、忽略规则
 
