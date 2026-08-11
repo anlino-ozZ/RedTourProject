@@ -45,8 +45,10 @@ withDefaults(defineProps<Props>(), {
   background: @color-bg-page;
 
   &__header {
-    position: sticky;
+    position: fixed;
     top: 0;
+    left: 0;
+    right: 0;
     z-index: 50;
     display: flex;
     align-items: center;
@@ -72,9 +74,9 @@ withDefaults(defineProps<Props>(), {
     &.has-tabbar {
       padding-bottom: 72px; // 56px tabbar + 16px 间距
     }
-    // 有顶部 header 时不需要额外顶部 padding
+    // 有顶部 header 时补偿 fixed header 高度
     &.has-header {
-      padding-top: @spacing-sm;
+      padding-top: 56px; // 48px header + 8px 间距
     }
   }
 }

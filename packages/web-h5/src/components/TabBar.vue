@@ -55,13 +55,18 @@ const tabs: TabItem[] = [
 const route = useRoute()
 const router = useRouter()
 
-// 当前激活的 Tab：首页用精确匹配，其余用前缀匹配（方便子路由高亮）
+// 当前激活的 Tab：精确匹配 + 子路径匹配（如 /guide/list 匹配 /guide）
 const activePath = computed(() => {
   const path = route.path
+  // 首页精确匹配
   if (path === '/') return '/'
-  // 匹配最长前缀
+  // 其他路径：确保路径匹配（避免 /guides 错误匹配 /guide）
   const matched = tabs
-    .filter((t) => t.path !== '/' && path.startsWith(t.path))
+    .filter((t) => {
+      if (t.path === '/') return false
+      // 精确匹配或子路径匹配
+      return path === t.path || path.startsWith(t.path + '/')
+    })
     .sort((a, b) => b.path.length - a.path.length)[0]
   return matched?.path ?? '/'
 })

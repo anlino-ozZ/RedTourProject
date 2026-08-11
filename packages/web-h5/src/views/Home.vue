@@ -38,6 +38,8 @@ function startTour() {
 @import '@common/style/variables.less';
 
 .home {
+  overflow-x: hidden; // 防止负 margin 导致的横向溢出
+  
   &__banner {
     margin: -@spacing-sm -@spacing-md @spacing-md;
     padding: @spacing-xl @spacing-lg;
