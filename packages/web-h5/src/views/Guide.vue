@@ -14,6 +14,8 @@ interface GuideRoute {
   duration: number
   /** 景点数 */
   spotCount: number
+  /** 距当前位置（公里，mock） */
+  distance: number
   tag: string
 }
 
@@ -25,6 +27,7 @@ const routes = ref<GuideRoute[]>([
     difficulty: 1,
     duration: 60,
     spotCount: 4,
+    distance: 3.2,
     tag: '轻松',
   },
   {
@@ -34,6 +37,7 @@ const routes = ref<GuideRoute[]>([
     difficulty: 2,
     duration: 90,
     spotCount: 6,
+    distance: 1.5,
     tag: '推荐',
   },
   {
@@ -43,14 +47,25 @@ const routes = ref<GuideRoute[]>([
     difficulty: 3,
     duration: 120,
     spotCount: 9,
+    distance: 6.8,
     tag: '挑战',
   },
 ])
 
 /** 视图：list 列表 / map 地图 */
 const view = ref<'list' | 'map'>('list')
+/** 排序方式：recommend 推荐优先 / distance 距离优先 */
+const sortType = ref<'recommend' | 'distance'>('recommend')
 /** 当前选中路线 ID */
 const selectedId = ref<number | null>(null)
+
+/** 排序后的路线（距离优先按距离升序；推荐优先保持推荐顺序） */
+const sortedRoutes = computed(() => {
+  if (sortType.value === 'distance') {
+    return [...routes.value].sort((a, b) => a.distance - b.distance)
+  }
+  return routes.value
+})
 
 const selectedRoute = computed(
   () => routes.value.find((r) => r.id === selectedId.value) ?? null,
@@ -94,10 +109,29 @@ function startGuide() {
 
     <!-- 列表视图 -->
     <template v-if="view === 'list'">
+      <!-- 排序切换 -->
+      <div class="guide__sort">
+        <span class="guide__sort-label">排序</span>
+        <button
+          class="guide__sort-item"
+          :class="{ 'is-active': sortType === 'recommend' }"
+          @click="sortType = 'recommend'"
+        >
+          推荐优先
+        </button>
+        <button
+          class="guide__sort-item"
+          :class="{ 'is-active': sortType === 'distance' }"
+          @click="sortType = 'distance'"
+        >
+          距离优先
+        </button>
+      </div>
+
       <p class="guide__hint">请选择一条导览路线（点击卡片选中）</p>
 
       <div
-        v-for="route in routes"
+        v-for="route in sortedRoutes"
         :key="route.id"
         class="guide__card"
         :class="{ 'is-selected': selectedId === route.id }"
@@ -114,6 +148,7 @@ function startGuide() {
             <span class="guide__card-stars">{{ stars(route.difficulty) }}</span>
             <span class="guide__card-duration">约 {{ route.duration }} 分钟</span>
             <span class="guide__card-spots">{{ route.spotCount }} 个景点</span>
+            <span class="guide__card-distance">距您 {{ route.distance }}km</span>
           </div>
         </div>
       </div>
@@ -174,6 +209,36 @@ function startGuide() {
       color: @color-primary;
       font-weight: 600;
       box-shadow: 0 2px 6px rgba(0, 0, 0, 0.08);
+    }
+  }
+
+  // 排序切换
+  &__sort {
+    display: flex;
+    align-items: center;
+    gap: @spacing-sm;
+    margin-bottom: @spacing-sm;
+  }
+
+  &__sort-label {
+    font-size: @font-size-sm;
+    color: @color-text-secondary;
+  }
+
+  &__sort-item {
+    height: 28px;
+    padding: 0 12px;
+    border: 1px solid @color-border;
+    border-radius: 14px;
+    background: @color-bg-card;
+    color: @color-text-regular;
+    font-size: @font-size-sm;
+    transition: all 0.2s;
+
+    &.is-active {
+      border-color: @color-primary;
+      background: @color-primary;
+      color: #fff;
     }
   }
 
@@ -254,6 +319,7 @@ function startGuide() {
   &__card-meta {
     display: flex;
     align-items: center;
+    flex-wrap: wrap;
     gap: @spacing-md;
     font-size: @font-size-sm;
     color: @color-text-secondary;
@@ -265,7 +331,8 @@ function startGuide() {
   }
 
   &__card-duration,
-  &__card-spots {
+  &__card-spots,
+  &__card-distance {
     &::before {
       content: '·';
       margin-right: @spacing-md;
