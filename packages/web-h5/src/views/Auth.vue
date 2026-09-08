@@ -39,6 +39,7 @@ function goBack() {
 }
 
 function onSubmit() {
+  if (loading.value) return
   if (!username.value || !password.value) return
   if (isRegister.value && password.value !== confirmPassword.value) return
   loading.value = true
@@ -119,6 +120,7 @@ function onSubmit() {
           <span v-if="passwordMismatch" class="auth__error">两次密码不一致，请重新输入</span>
         </label>
 
+        <!-- 提交统一走 form 的 submit（RedButton 原生 button 默认 type=submit），避免 click + submit 双重触发 -->
         <RedButton
           size="large"
           :loading="loading"
@@ -126,7 +128,6 @@ function onSubmit() {
             !username || !password || (isRegister && !confirmPassword) || passwordMismatch
           "
           class="auth__submit"
-          @click="onSubmit"
         >
           {{ isRegister ? '注册' : '登录' }}
         </RedButton>
