@@ -20,7 +20,7 @@ const routes: RouteRecordRaw[] = [
     path: '/guide',
     name: 'guide',
     component: () => import('@/views/Guide.vue'),
-    meta: { title: '导览', showTabBar: true },
+    meta: { title: '智能导览', showTabBar: true },
   },
   {
     path: '/qa',
