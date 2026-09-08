@@ -59,12 +59,14 @@ const sortType = ref<'recommend' | 'distance'>('recommend')
 /** 当前选中路线 ID */
 const selectedId = ref<number | null>(null)
 
-/** 排序后的路线（距离优先按距离升序；推荐优先保持推荐顺序） */
+/** 排序后的路线（距离优先按距离升序；推荐优先把"推荐"路线置顶） */
 const sortedRoutes = computed(() => {
   if (sortType.value === 'distance') {
     return [...routes.value].sort((a, b) => a.distance - b.distance)
   }
-  return routes.value
+  return [...routes.value].sort(
+    (a, b) => (b.tag === '推荐' ? 1 : 0) - (a.tag === '推荐' ? 1 : 0),
+  )
 })
 
 const selectedRoute = computed(
