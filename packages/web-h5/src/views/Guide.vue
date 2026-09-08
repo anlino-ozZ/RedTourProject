@@ -136,11 +136,10 @@ function startGuide() {
       <RedButton
         type="primary"
         size="large"
-        block
         :disabled="!selectedRoute"
         @click="startGuide"
       >
-        {{ selectedRoute ? `开始导览 · ${selectedRoute.name}` : '请先选择路线' }}
+        {{ selectedRoute ? '开始导览' : '请先选择路线' }}
       </RedButton>
     </div>
   </div>
@@ -322,6 +321,12 @@ function startGuide() {
     background: fade(@color-bg-card, 96%);
     box-shadow: 0 -2px 10px rgba(0, 0, 0, 0.06);
     z-index: 90;
+
+    // RedButton 无 block 属性，这里强制撑满，保证选中前后按钮尺寸一致
+    :deep(.rt-red-btn) {
+      width: 100%;
+      white-space: nowrap;
+    }
   }
 }
 </style>
