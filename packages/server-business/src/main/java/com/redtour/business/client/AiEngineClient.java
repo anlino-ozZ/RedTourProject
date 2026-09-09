@@ -2,6 +2,7 @@ package com.redtour.business.client;
 
 import com.redtour.business.dto.AskRequest;
 import com.redtour.business.dto.AskResult;
+import com.redtour.business.dto.WikiCompileRequest;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.ParameterizedTypeReference;
@@ -18,7 +19,7 @@ import java.util.Map;
 
 /**
  * AI 引擎 HTTP 客户端
- * 对接 packages/ai-engine（:8001）的 /engine/health、/engine/ask 接口
+ * 对接 packages/ai-engine（:8001）的 /engine/health、/engine/ask、/engine/wiki/compile 接口
  * 所有对外方法均捕获异常并返回降级结果，避免上层业务被网络抖动打断
  */
 @Slf4j
@@ -72,6 +73,30 @@ public class AiEngineClient {
         } catch (Exception e) {
             log.error("[AI] ask 未知异常", e);
             return buildFallback(req, "问答服务遇到未知错误。");
+        }
+    }
+
+    /**
+     * 调用 AI 引擎 Wiki 编译接口。
+     * 编译服务不可用时返回 status=failed，由 Wiki 业务层统一落库为失败状态。
+     */
+    public Map<String, Object> compileWiki(WikiCompileRequest request) {
+        try {
+            ResponseEntity<Map<String, Object>> resp = restTemplate.exchange(
+                    baseUrl + "/engine/wiki/compile", HttpMethod.POST,
+                    new HttpEntity<>(request), MAP_TYPE);
+            Map<String, Object> body = resp.getBody();
+            return body == null ? Map.of("status", "failed", "error", "AI 引擎返回空响应") : body;
+        } catch (ResourceAccessException e) {
+            log.error("[AI] Wiki 编译引擎不可达 (scenicAreaId={})", request == null ? null : request.getScenicAreaId(), e);
+            return Map.of("status", "failed", "error", "AI 引擎暂不可用");
+        } catch (RestClientException e) {
+            log.error("[AI] Wiki 编译请求异常 (scenicAreaId={})",
+                    request == null ? null : request.getScenicAreaId(), e);
+            return Map.of("status", "failed", "error", "Wiki 编译服务异常");
+        } catch (Exception e) {
+            log.error("[AI] Wiki 编译未知异常", e);
+            return Map.of("status", "failed", "error", "Wiki 编译服务异常");
         }
     }
 

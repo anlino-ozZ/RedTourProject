@@ -59,6 +59,7 @@ data:
     max-image-mb: 10
     max-audio-mb: 50
     max-wiki-mb: 20
+  wiki-build-path: ${DATA_WIKI_BUILD_PATH:./wiki_build}
 
 logging:
   level:
