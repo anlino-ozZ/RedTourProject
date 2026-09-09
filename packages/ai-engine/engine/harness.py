@@ -44,7 +44,23 @@ class LocalContextMiddleware:
         """检索与问题相关的少量 Wiki 条目，限制传给模型的上下文规模。"""
         scenic_area_id = context.get("scenicAreaId")
         references = self.compiler.retrieve(query, scenic_area_id=scenic_area_id)
-        return references[: max(1, min(limit, 8))]
+        valid_references = [
+            reference
+            for reference in references
+            if self._is_existing_reference(reference)
+        ]
+        return valid_references[: max(1, min(limit, 8))]
+
+    def _is_existing_reference(self, reference: Mapping[str, Any]) -> bool:
+        """仅允许索引中对应实际文件的条目进入回答上下文。"""
+        file_path = reference.get("file_path")
+        if not isinstance(file_path, str) or not file_path.strip():
+            return False
+        try:
+            target = (self.compiler.build_dir / file_path).resolve()
+            return target.is_file() and target.is_relative_to(self.compiler.build_dir)
+        except (OSError, ValueError):
+            return False
 
     def _wiki_count(self) -> int:
         try:
@@ -120,6 +136,11 @@ class Harness:
             raise ValueError("问题不能为空")
         context = self.context_middleware.inject_context(location)
         references = self.context_middleware.retrieve(normalized_question, context)
+        if not references:
+            return {
+                "answer": "知识库暂无足够依据，暂时无法可靠回答这个问题。",
+                "sources": [],
+            }
         answer = self.reasoning_sandwich(normalized_question, context, references)
         if not self.verify_gate(answer, references):
             raise RuntimeError("回答引用未通过验证")

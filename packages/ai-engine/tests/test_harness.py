@@ -14,8 +14,10 @@ class FakeOllama:
     def __init__(self, answer: str) -> None:
         self.answer = answer
         self.messages: list[dict[str, str]] = []
+        self.calls = 0
 
     def chat(self, messages: list[dict[str, str]], **_kwargs: object) -> str:
+        self.calls += 1
         self.messages = messages
         return self.answer
 
@@ -56,7 +58,55 @@ class HarnessTest(unittest.TestCase):
         result = harness.answer("一个没有资料的问题", location="scenic_area:1")
 
         self.assertEqual([], result["sources"])
-        self.assertEqual("知识库暂无足够依据。", result["answer"])
+        self.assertEqual("知识库暂无足够依据，暂时无法可靠回答这个问题。", result["answer"])
+        self.assertEqual(0, harness.ollama_client.calls)
+
+    def test_ignores_index_entries_without_real_files(self) -> None:
+        root = Path(tempfile.mkdtemp())
+        compiler = WikiCompiler(root / "wiki", root / "build")
+        compiler._atomic_write_json(
+            compiler._index_path(),
+            {
+                "version": 1,
+                "entries": [
+                    {
+                        "title": "伪造条目",
+                        "file_path": "wiki/scenic_1/missing.md",
+                        "tags": [],
+                        "links": [],
+                        "content": "不应进入上下文",
+                    }
+                ],
+            },
+        )
+        middleware = LocalContextMiddleware(compiler)
+        ollama = FakeOllama("不应被调用")
+        harness = Harness(ollama_client=ollama, context_middleware=middleware)
+
+        result = harness.answer("伪造条目", location="scenic_area:1")
+
+        self.assertEqual([], result["sources"])
+        self.assertEqual(0, ollama.calls)
+
+    def test_verify_gate_rejects_sources_not_in_retrieved_references(self) -> None:
+        root = Path(tempfile.mkdtemp())
+        harness = Harness(
+            ollama_client=FakeOllama("回答"),
+            context_middleware=LocalContextMiddleware(WikiCompiler(root / "wiki", root / "build")),
+        )
+
+        self.assertFalse(
+            harness.verify_gate(
+                "参考 wiki/未命中条目",
+                [{"file_path": "wiki/scenic_1/遵义会议.md"}],
+            )
+        )
+        self.assertTrue(
+            harness.verify_gate(
+                "这是保守回答。",
+                [{"file_path": "wiki/scenic_1/遵义会议.md"}],
+            )
+        )
 
 
 if __name__ == "__main__":
