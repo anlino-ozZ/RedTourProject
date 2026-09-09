@@ -1,6 +1,7 @@
 package com.redtour.business.client;
 
 import com.redtour.business.dto.AskRequest;
+import com.redtour.business.dto.AskResult;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.ParameterizedTypeReference;
@@ -13,7 +14,6 @@ import org.springframework.web.client.RestClientException;
 import org.springframework.web.client.RestTemplate;
 
 import java.util.ArrayList;
-import java.util.LinkedHashMap;
 import java.util.Map;
 
 /**
@@ -54,33 +54,52 @@ public class AiEngineClient {
      * - 引擎连接失败（ResourceAccessException）：返回带 fallback 答案的结构
      * - 其他 4xx/5xx：记录日志并返回错误说明
      */
-    public Map<String, Object> ask(AskRequest req) {
+    public AskResult ask(AskRequest req) {
         try {
-            ResponseEntity<Map<String, Object>> resp = restTemplate.exchange(
-                    baseUrl + "/engine/ask", HttpMethod.POST, new HttpEntity<>(req), MAP_TYPE);
-            return resp.getBody();
+            ResponseEntity<AskResult> resp = restTemplate.exchange(
+                    baseUrl + "/engine/ask", HttpMethod.POST, new HttpEntity<>(req), AskResult.class);
+            AskResult result = resp.getBody();
+            return result == null ? buildFallback(req, "AI 引擎返回空响应，请稍后再试。")
+                    : normalizeResult(req, result);
         } catch (ResourceAccessException e) {
             log.error("[AI] ask 请求失败：引擎连接超时或不可达 (question={})，降级返回",
                     req == null ? null : req.getQuestion(), e);
-            return buildFallback("AI 引擎暂不可用，请稍后再试。");
+            return buildFallback(req, "AI 引擎暂不可用，请稍后再试。");
         } catch (RestClientException e) {
             log.error("[AI] ask 请求异常 (question={})",
                     req == null ? null : req.getQuestion(), e);
-            return buildFallback("问答服务异常，请联系管理员。");
+            return buildFallback(req, "问答服务异常，请联系管理员。");
         } catch (Exception e) {
             log.error("[AI] ask 未知异常", e);
-            return buildFallback("问答服务遇到未知错误。");
+            return buildFallback(req, "问答服务遇到未知错误。");
         }
     }
 
-    /** 构造降级响应 Map，字段与接口文档 AskResult 保持一致 */
-    private Map<String, Object> buildFallback(String answer) {
-        Map<String, Object> m = new LinkedHashMap<>();
-        m.put("question", "");
-        m.put("answer", answer);
-        m.put("sources", new ArrayList<>());
-        m.put("durationMs", 0);
-        m.put("audioUrl", null);
-        return m;
+    /** 补齐 AI 引擎可能缺省的字段。 */
+    private AskResult normalizeResult(AskRequest request, AskResult result) {
+        if (result.getQuestion() == null || result.getQuestion().isBlank()) {
+            result.setQuestion(request == null ? "" : request.getQuestion());
+        }
+        if (result.getAnswer() == null || result.getAnswer().isBlank()) {
+            result.setAnswer("AI 引擎未返回有效回答，请稍后再试。");
+        }
+        if (result.getSources() == null) {
+            result.setSources(new ArrayList<>());
+        }
+        if (result.getDurationMs() == null || result.getDurationMs() < 0) {
+            result.setDurationMs(0L);
+        }
+        return result;
+    }
+
+    /** 构造降级响应，字段与接口文档 AskResult 保持一致。 */
+    private AskResult buildFallback(AskRequest request, String answer) {
+        AskResult result = new AskResult();
+        result.setQuestion(request == null || request.getQuestion() == null ? "" : request.getQuestion());
+        result.setAnswer(answer);
+        result.setSources(new ArrayList<>());
+        result.setDurationMs(0L);
+        result.setAudioUrl(null);
+        return result;
     }
 }

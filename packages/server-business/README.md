@@ -55,3 +55,9 @@ java -jar target/server-business.jar --spring.profiles.active=prod
 ## 健康检查
 
 `GET http://localhost:8000/api/v1/health` → `{code,message,data:{db,redis,ai,hardware}}`
+
+## 智能问答
+
+`POST http://localhost:8000/api/v1/ask` 将请求透传至 AI 引擎，并将结果写入
+`ask_log`。触摸屏可额外携带请求头 `X-Device-Id` 标记来源设备；AI 引擎或日志
+数据库短暂不可用时仍返回结构完整的降级结果。
