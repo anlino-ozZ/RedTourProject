@@ -11,7 +11,7 @@ import re
 from pathlib import Path
 from typing import Any, Mapping
 
-from engine.llm_wiki import WikiCompiler
+from engine.llm_wiki import WikiCompileError, WikiCompiler
 from engine.ollama_infer import OllamaClient
 
 
@@ -35,6 +35,7 @@ class LocalContextMiddleware:
             "scenicAreaId": scenic_area_id,
             "wikiBuildDir": str(self.compiler.build_dir),
             "wikiCount": self._wiki_count(),
+            "wikiEntries": self._wiki_entries(scenic_area_id),
             "instructions": "仅依据本地 Wiki 资料回答；资料不足时明确说明知识库暂无依据。",
         }
 
@@ -68,6 +69,34 @@ class LocalContextMiddleware:
         except OSError:
             return 0
 
+    def _wiki_entries(self, scenic_area_id: int | None) -> list[dict[str, Any]]:
+        """注入当前景区的条目地图，不携带正文，避免上下文无界增长。"""
+        try:
+            entries = self.compiler._read_index().get("entries", [])
+        except WikiCompileError:
+            return []
+        result: list[dict[str, Any]] = []
+        for entry in entries:
+            if not isinstance(entry, Mapping):
+                continue
+            if scenic_area_id is not None and not self.compiler._entry_matches_scenic_area(
+                dict(entry), scenic_area_id
+            ):
+                continue
+            title = entry.get("title")
+            file_path = entry.get("file_path")
+            if isinstance(title, str) and isinstance(file_path, str):
+                result.append(
+                    {
+                        "title": title.strip(),
+                        "filePath": file_path.strip(),
+                        "tags": self.compiler._normalize_values(entry.get("tags")),
+                    }
+                )
+            if len(result) >= 20:
+                break
+        return result
+
 
 class Harness:
     """AI 推理机架：Wiki 检索 + Ollama 对话 + 最小验证门。"""
@@ -81,6 +110,11 @@ class Harness:
     ) -> None:
         self.context_middleware = context_middleware or LocalContextMiddleware()
         self.ollama_client = ollama_client or OllamaClient()
+        default_model = getattr(self.ollama_client, "model", OllamaClient.DEFAULT_MODEL)
+        self.reasoning_model = os.getenv("OLLAMA_REASONING_MODEL", default_model)
+        self.polish_model = os.getenv(
+            "OLLAMA_LIGHT_MODEL", os.getenv("OLLAMA_MODEL", default_model)
+        )
 
     def reasoning_sandwich(
         self, query: str, context: dict[str, Any], references: list[dict[str, Any]] | None = None
@@ -89,21 +123,45 @@ class Harness:
         if references is None:
             references = self.context_middleware.retrieve(query, context)
         evidence = self._format_evidence(references)
-        system_prompt = (
-            "你是红色文旅离线讲解员。回答必须使用简体中文，优先依据给定 Wiki 资料。"
-            "如果资料没有回答问题，请明确说‘知识库暂无足够依据’，不要编造史实。"
-            "不要输出 JSON、不要输出思考过程、不要虚构 Wiki 路径。"
-        )
-        user_prompt = (
+        planning_prompt = (
+            "你是红色文旅问答规划器。请基于游客问题和本地 Wiki 证据，提炼回答要点、"
+            "需要避免的不确定说法，以及可使用的来源路径。只输出简短规划，不要编造事实。\n"
             f"景区上下文：{context.get('location') or '未指定'}\n"
+            f"条目地图：{context.get('wikiEntries', [])}\n"
             f"本地资料：\n{evidence or '（没有检索到相关 Wiki 资料）'}\n\n"
-            f"游客问题：{query}\n\n请给出简洁、适合游客阅读的回答。"
+            f"游客问题：{query}"
+        )
+        plan = self.ollama_client.chat(
+            [
+                {
+                    "role": "system",
+                    "content": "你负责高可靠的历史问答规划，必须尊重本地资料边界。",
+                },
+                {"role": "user", "content": planning_prompt},
+            ],
+            model=self.reasoning_model,
+            stream=False,
+        )
+        if not isinstance(plan, str) or not plan.strip():
+            raise RuntimeError("推理规划为空")
+
+        polish_prompt = (
+            "你是红色文旅离线讲解员。请根据问题规划和本地 Wiki 资料输出最终回答。"
+            "回答必须使用简体中文、简洁易懂；资料不足时明确说‘知识库暂无足够依据’，"
+            "不要编造史实、不要输出思考过程、不要虚构 Wiki 路径。\n"
+            f"问题规划：{plan.strip()}\n"
+            f"本地资料：\n{evidence or '（没有检索到相关 Wiki 资料）'}\n\n"
+            f"游客问题：{query}\n\n请给出最终回答。"
         )
         response = self.ollama_client.chat(
             [
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_prompt},
+                {
+                    "role": "system",
+                    "content": "你负责将有依据的规划润色成游客可读答案。",
+                },
+                {"role": "user", "content": polish_prompt},
             ],
+            model=self.polish_model,
             stream=False,
         )
         if not isinstance(response, str) or not response.strip():
@@ -122,8 +180,12 @@ class Harness:
         if not allowed_paths:
             return True
         # 模型回答中若主动输出 wiki/路径，只允许本次命中的路径。
-        mentioned_paths = set(re.findall(r"wiki/[\w\-一-龥/ .]+", answer))
-        return not mentioned_paths or mentioned_paths.issubset(allowed_paths)
+        mentioned_paths = self._extract_source_paths(answer)
+        normalized_allowed = {path.removesuffix(".md") for path in allowed_paths}
+        return not mentioned_paths or all(
+            path in allowed_paths or path.removesuffix(".md") in normalized_allowed
+            for path in mentioned_paths
+        )
 
     def update_todo(self, tasks: list[str]) -> None:
         """保留 Harness 状态协议入口；MVP 不写用户目录，避免污染运行环境。"""
@@ -166,3 +228,9 @@ class Harness:
             if remaining <= 0:
                 break
         return "\n".join(chunks)
+
+    @staticmethod
+    def _extract_source_paths(answer: str) -> set[str]:
+        """提取模型可能输出的 Wiki 路径，去除中文标点造成的误差。"""
+        matches = re.findall(r"wiki/[^\s，。！？；：,\)）\]】]+", answer)
+        return {match.rstrip(".。；，,") for match in matches}

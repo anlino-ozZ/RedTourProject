@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import tempfile
 import unittest
+from unittest.mock import patch
 from pathlib import Path
 
 from engine.harness import Harness, LocalContextMiddleware
@@ -11,14 +12,18 @@ from engine.llm_wiki import WikiCompiler
 
 
 class FakeOllama:
-    def __init__(self, answer: str) -> None:
+    def __init__(self, answer: str | list[str]) -> None:
         self.answer = answer
         self.messages: list[dict[str, str]] = []
         self.calls = 0
+        self.models: list[str | None] = []
 
-    def chat(self, messages: list[dict[str, str]], **_kwargs: object) -> str:
+    def chat(self, messages: list[dict[str, str]], **kwargs: object) -> str:
         self.calls += 1
         self.messages = messages
+        self.models.append(kwargs.get("model") if isinstance(kwargs.get("model"), str) else None)
+        if isinstance(self.answer, list):
+            return self.answer[min(self.calls - 1, len(self.answer) - 1)]
         return self.answer
 
 
@@ -30,12 +35,14 @@ class HarnessTest(unittest.TestCase):
         compiler = WikiCompiler(root / "wiki", root / "build")
         compiler.compile_source("遵义会议在1935年1月召开，是伟大的历史转折。", "遵义会议", 1)
         middleware = LocalContextMiddleware(compiler)
-        ollama = FakeOllama("遵义会议于1935年1月召开。")
+        ollama = FakeOllama(["规划：回答会议时间。", "遵义会议于1935年1月召开。"])
         harness = Harness(ollama_client=ollama, context_middleware=middleware)
 
         result = harness.answer("遵义会议何时召开？", location="scenic_area:1")
 
         self.assertEqual(["wiki/scenic_1/遵义会议.md"], result["sources"])
+        self.assertEqual(2, ollama.calls)
+        self.assertEqual([ollama.models[0], ollama.models[1]], ollama.models)
         self.assertIn("遵义会议何时召开？", ollama.messages[-1]["content"])
         self.assertIn("遵义会议在1935年1月召开", ollama.messages[-1]["content"])
 
@@ -107,6 +114,37 @@ class HarnessTest(unittest.TestCase):
                 [{"file_path": "wiki/scenic_1/遵义会议.md"}],
             )
         )
+
+    def test_verify_gate_accepts_markdown_suffix_for_allowed_source(self) -> None:
+        root = Path(tempfile.mkdtemp())
+        harness = Harness(
+            ollama_client=FakeOllama("回答"),
+            context_middleware=LocalContextMiddleware(WikiCompiler(root / "wiki", root / "build")),
+        )
+
+        self.assertTrue(
+            harness.verify_gate(
+                "参考 wiki/scenic_1/遵义会议",
+                [{"file_path": "wiki/scenic_1/遵义会议.md"}],
+            )
+        )
+
+    def test_reasoning_sandwich_uses_configured_reasoning_and_light_models(self) -> None:
+        root = Path(tempfile.mkdtemp())
+        compiler = WikiCompiler(root / "wiki", root / "build")
+        compiler.compile_source("遵义会议在1935年1月召开，是历史转折。", "遵义会议", 1)
+        middleware = LocalContextMiddleware(compiler)
+        ollama = FakeOllama(["规划", "最终回答"])
+        with patch.dict(
+            "os.environ",
+            {"OLLAMA_REASONING_MODEL": "reasoning-model", "OLLAMA_LIGHT_MODEL": "light-model"},
+            clear=False,
+        ):
+            harness = Harness(ollama_client=ollama, context_middleware=middleware)
+            result = harness.answer("遵义会议何时召开？", location="scenic_area:1")
+
+        self.assertEqual("最终回答", result["answer"])
+        self.assertEqual(["reasoning-model", "light-model"], ollama.models)
 
 
 if __name__ == "__main__":
