@@ -58,6 +58,10 @@ uvicorn main:app --reload --host 0.0.0.0 --port 8001
 - 姿态检测：`POST /engine/pose`
 - API 文档：<http://localhost:8001/docs>
 
+健康检查固定返回 `status`、`engine`、`ollama`、`hailo`、`wikiCount`。Ollama
+不可达、目标模型未安装或已启用的 Hailo8L 不可用时，`status` 为 `degraded`，
+接口仍正常响应，便于业务后端继续运行降级逻辑。
+
 ## 目录结构
 
 ```

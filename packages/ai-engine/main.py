@@ -9,12 +9,16 @@ import uvicorn
 from fastapi import FastAPI
 from pydantic import BaseModel
 
+from engine.health import HealthChecker
+
 # 创建 FastAPI 应用实例
 app = FastAPI(
     title="红色文旅智能导览系统 - AI 引擎",
     description="LLM Wiki 知识问答 + YOLOv8-pose 姿态动作识别",
     version="0.1.0",
 )
+
+health_checker = HealthChecker()
 
 
 class AskRequest(BaseModel):
@@ -28,9 +32,9 @@ class PoseRequest(BaseModel):
 
 
 @app.get("/engine/health")
-def health() -> dict[str, str]:
-    """引擎健康检查"""
-    return {"status": "ok", "engine": "ai-engine"}
+def health() -> dict[str, str | int]:
+    """返回 Ollama、Hailo8L 和 Wiki 的健康状态。"""
+    return health_checker.check()
 
 
 @app.post("/engine/ask")
