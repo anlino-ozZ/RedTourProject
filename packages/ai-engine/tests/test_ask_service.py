@@ -3,8 +3,11 @@
 from __future__ import annotations
 
 import unittest
+import tempfile
+from pathlib import Path
 
 from engine.ask_service import FALLBACK_ANSWER, AskService
+from engine.tts import TtsSynthesizer
 
 
 class FakeClock:
@@ -71,6 +74,62 @@ class AskServiceTest(unittest.TestCase):
         result = service.ask("问题", use_voice=False)
 
         self.assertIsNone(result["audioUrl"])
+
+    def test_voice_request_synthesizes_after_answer_generation(self) -> None:
+        root = Path(tempfile.mkdtemp())
+
+        class FakeEngine:
+            def save_to_file(self, _text: str, path: str) -> None:
+                Path(path).write_bytes(b"audio")
+
+            def runAndWait(self) -> None:
+                return None
+
+        tts = TtsSynthesizer(root, "/audio/tts", engine_factory=FakeEngine)
+        service = AskService(
+            answer_provider=lambda _question, _scenic_id: "回答文本",
+            tts_synthesizer=tts,
+        )
+
+        result = service.ask("问题", use_voice=True)
+
+        self.assertRegex(result["audioUrl"], r"^/audio/tts/ask_[0-9a-f]{32}\.wav$")
+
+    def test_tts_failure_does_not_replace_text_answer(self) -> None:
+        class FailedTts:
+            def synthesize(self, _text: str) -> str:
+                raise RuntimeError("tts unavailable")
+
+        service = AskService(
+            answer_provider=lambda _question, _scenic_id: "仍可展示的回答",
+            tts_synthesizer=FailedTts(),
+        )
+
+        result = service.ask("问题", use_voice=True)
+
+        self.assertEqual("仍可展示的回答", result["answer"])
+        self.assertIsNone(result["audioUrl"])
+
+    def test_text_request_does_not_call_tts(self) -> None:
+        class CountingTts:
+            def __init__(self) -> None:
+                self.calls = 0
+
+            def synthesize(self, _text: str) -> str:
+                self.calls += 1
+                return "/audio/tts/unused.wav"
+
+        tts = CountingTts()
+        service = AskService(
+            answer_provider=lambda _question, _scenic_id: "文本回答",
+            tts_synthesizer=tts,
+        )
+
+        result = service.ask("问题", use_voice=False)
+
+        self.assertEqual("文本回答", result["answer"])
+        self.assertIsNone(result["audioUrl"])
+        self.assertEqual(0, tts.calls)
 
     def test_provider_failure_returns_fallback_instead_of_raising(self) -> None:
         def failed_provider(_question: str, _scenic_id: int | None) -> object:

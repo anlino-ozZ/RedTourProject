@@ -9,11 +9,14 @@ import os
 
 import uvicorn
 from fastapi import FastAPI
+from fastapi import HTTPException
+from fastapi.responses import FileResponse
 from pydantic import BaseModel, ConfigDict, Field
 
 from engine.ask_service import AskService
 from engine.health import HealthChecker
 from engine.llm_wiki import WikiCompileError, WikiCompiler
+from engine.tts import TtsError, TtsSynthesizer
 
 # 创建 FastAPI 应用实例
 app = FastAPI(
@@ -28,6 +31,7 @@ wiki_compiler = WikiCompiler(
     wiki_dir=os.getenv("WIKI_DIR", "./wiki"),
     build_dir=os.getenv("WIKI_BUILD_DIR", "./wiki_build"),
 )
+tts_synthesizer = TtsSynthesizer()
 
 
 class AskRequest(BaseModel):
@@ -112,6 +116,16 @@ def compile_wiki(req: WikiCompileRequest) -> WikiCompileResponse:
     except (OSError, ValueError, TypeError) as exc:
         # 文件系统和格式异常都在接口边界转成可识别失败，避免堆栈泄漏。
         return WikiCompileResponse(status="failed", error="Wiki 编译或写入失败")
+
+
+@app.get("/engine/audio/{filename}", response_class=FileResponse)
+def get_audio(filename: str) -> FileResponse:
+    """向业务后端提供受控的 TTS 音频文件。"""
+    try:
+        target = tts_synthesizer.resolve_audio(filename)
+    except TtsError as exc:
+        raise HTTPException(status_code=404, detail="音频文件不存在") from exc
+    return FileResponse(target, media_type="audio/wav", filename=filename)
 
 
 @app.post("/engine/pose")

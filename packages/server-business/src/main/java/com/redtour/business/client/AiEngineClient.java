@@ -16,6 +16,7 @@ import org.springframework.web.client.RestTemplate;
 
 import java.util.ArrayList;
 import java.util.Map;
+import java.util.regex.Pattern;
 
 /**
  * AI 引擎 HTTP 客户端
@@ -25,6 +26,8 @@ import java.util.Map;
 @Slf4j
 @Component
 public class AiEngineClient {
+
+    private static final Pattern TTS_FILENAME = Pattern.compile("ask_[0-9a-f]{32}\\.wav");
 
     private final RestTemplate restTemplate;
 
@@ -97,6 +100,22 @@ public class AiEngineClient {
         } catch (Exception e) {
             log.error("[AI] Wiki 编译未知异常", e);
             return Map.of("status", "failed", "error", "Wiki 编译服务异常");
+        }
+    }
+
+    /** 获取 AI 引擎生成的 TTS 音频字节；非法文件名或引擎异常统一返回 null。 */
+    public byte[] fetchTtsAudio(String filename) {
+        if (filename == null || !TTS_FILENAME.matcher(filename).matches()) {
+            return null;
+        }
+        try {
+            ResponseEntity<byte[]> resp = restTemplate.exchange(
+                    baseUrl + "/engine/audio/" + filename, HttpMethod.GET, null, byte[].class);
+            byte[] body = resp.getBody();
+            return body == null || body.length == 0 ? null : body;
+        } catch (Exception e) {
+            log.warn("[AI] TTS 音频获取失败 (filename={})", filename, e);
+            return null;
         }
     }
 

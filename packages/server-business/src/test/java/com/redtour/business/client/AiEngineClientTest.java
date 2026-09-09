@@ -60,4 +60,14 @@ class AiEngineClientTest {
 
         assertEquals("failed", result.get("status"));
     }
+
+    @Test
+    void shouldRejectUnsafeTtsFilenameBeforeCallingEngine() {
+        RestTemplate restTemplate = mock(RestTemplate.class);
+        AiEngineClient client = new AiEngineClient(restTemplate);
+        ReflectionTestUtils.setField(client, "baseUrl", "http://localhost:8001");
+
+        assertNull(client.fetchTtsAudio("../outside.wav"));
+        org.mockito.Mockito.verifyNoInteractions(restTemplate);
+    }
 }

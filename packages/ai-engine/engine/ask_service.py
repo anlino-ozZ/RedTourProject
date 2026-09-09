@@ -7,6 +7,7 @@ from time import perf_counter
 from typing import Any, TypedDict
 
 from engine.harness import Harness
+from engine.tts import TtsSynthesizer
 
 FALLBACK_ANSWER = "当前本地问答模型暂不可用，请稍后重试。"
 
@@ -31,10 +32,12 @@ class AskService:
         self,
         answer_provider: AnswerProvider | None = None,
         clock: Callable[[], float] = perf_counter,
+        tts_synthesizer: TtsSynthesizer | None = None,
     ) -> None:
         self._harness = Harness()
         self._answer_provider = answer_provider or self._answer_with_harness
         self._clock = clock
+        self._tts_synthesizer = tts_synthesizer or TtsSynthesizer()
 
     def ask(
         self,
@@ -51,6 +54,13 @@ class AskService:
         # Ollama、Wiki 与 TTS 都是可降级依赖，异常不得突破 AI 引擎接口边界。
         except Exception:
             answer, sources, audio_url = FALLBACK_ANSWER, [], None
+
+        if use_voice and audio_url is None:
+            try:
+                audio_url = self._tts_synthesizer.synthesize(answer)
+            except Exception:
+                # TTS 属于旁路能力，合成失败不能覆盖已生成的文字回答。
+                audio_url = None
 
         duration_ms = max(0, round((self._clock() - started_at) * 1000))
         return {
