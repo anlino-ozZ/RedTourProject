@@ -62,6 +62,10 @@ uvicorn main:app --reload --host 0.0.0.0 --port 8001
 不可达、目标模型未安装或已启用的 Hailo8L 不可用时，`status` 为 `degraded`，
 接口仍正常响应，便于业务后端继续运行降级逻辑。
 
+问答接口接收 `question`、可选的 `scenicAreaId` 与 `useVoice`，固定返回
+`question`、`answer`、`sources`、`durationMs`、`audioUrl`。底层 Ollama、Wiki
+或 TTS 尚未就绪时会返回可展示的降级答案，不会向调用方抛出依赖异常。
+
 ## 目录结构
 
 ```

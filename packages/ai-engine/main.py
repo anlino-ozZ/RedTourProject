@@ -7,8 +7,9 @@ ai-engine 入口
 
 import uvicorn
 from fastapi import FastAPI
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict, Field
 
+from engine.ask_service import AskService
 from engine.health import HealthChecker
 
 # 创建 FastAPI 应用实例
@@ -19,11 +20,29 @@ app = FastAPI(
 )
 
 health_checker = HealthChecker()
+ask_service = AskService()
 
 
 class AskRequest(BaseModel):
-    """问答请求体"""
+    """问答请求体。"""
+
+    model_config = ConfigDict(populate_by_name=True, str_strip_whitespace=True)
+
+    question: str = Field(min_length=1, max_length=500)
+    scenic_area_id: int | None = Field(default=None, alias="scenicAreaId", gt=0)
+    use_voice: bool = Field(default=False, alias="useVoice")
+
+
+class AskResponse(BaseModel):
+    """问答响应体，别名保证 HTTP JSON 使用 camelCase。"""
+
+    model_config = ConfigDict(populate_by_name=True)
+
     question: str
+    answer: str
+    sources: list[str]
+    duration_ms: int = Field(alias="durationMs", ge=0)
+    audio_url: str | None = Field(default=None, alias="audioUrl")
 
 
 class PoseRequest(BaseModel):
@@ -37,11 +56,11 @@ def health() -> dict[str, str | int]:
     return health_checker.check()
 
 
-@app.post("/engine/ask")
-def ask(req: AskRequest) -> dict[str, str]:
-    """调用机架 Harness 进行知识问答"""
-    # TODO: 接入 engine.harness.Harness.answer()
-    return {"answer": f"[TODO] 待接入 Harness 处理问题：{req.question}"}
+@app.post("/engine/ask", response_model=AskResponse, response_model_by_alias=True)
+def ask(req: AskRequest) -> AskResponse:
+    """执行知识问答并返回稳定的 camelCase 响应。"""
+    result = ask_service.ask(req.question, req.scenic_area_id, req.use_voice)
+    return AskResponse.model_validate(result)
 
 
 @app.post("/engine/pose")
