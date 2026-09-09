@@ -5,12 +5,15 @@ ai-engine 入口
 集成 Ollama LLM（Wiki 模式）、YOLOv8-pose 姿态检测、Hailo8L 加速。
 """
 
+import os
+
 import uvicorn
 from fastapi import FastAPI
 from pydantic import BaseModel, ConfigDict, Field
 
 from engine.ask_service import AskService
 from engine.health import HealthChecker
+from engine.llm_wiki import WikiCompileError, WikiCompiler
 
 # 创建 FastAPI 应用实例
 app = FastAPI(
@@ -21,6 +24,10 @@ app = FastAPI(
 
 health_checker = HealthChecker()
 ask_service = AskService()
+wiki_compiler = WikiCompiler(
+    wiki_dir=os.getenv("WIKI_DIR", "./wiki"),
+    build_dir=os.getenv("WIKI_BUILD_DIR", "./wiki_build"),
+)
 
 
 class AskRequest(BaseModel):
@@ -45,6 +52,26 @@ class AskResponse(BaseModel):
     audio_url: str | None = Field(default=None, alias="audioUrl")
 
 
+class WikiCompileRequest(BaseModel):
+    """Wiki 编译请求体，兼容业务后端 camelCase 与旧文档 snake_case。"""
+
+    model_config = ConfigDict(populate_by_name=True, str_strip_whitespace=True)
+
+    scenic_area_id: int | None = Field(default=None, alias="scenicAreaId", gt=0)
+    title: str | None = Field(default=None, max_length=100)
+    content: str = Field(min_length=1)
+    tags: list[str] = Field(default_factory=list, max_length=50)
+
+
+class WikiCompileResponse(BaseModel):
+    """Wiki 编译稳定响应。"""
+
+    status: str
+    file_path: str | None = None
+    links: list[str] = Field(default_factory=list)
+    error: str | None = None
+
+
 class PoseRequest(BaseModel):
     """姿态检测请求体"""
     frame_path: str  # 图像路径（骨架阶段用路径占位，后续可改为 base64）
@@ -61,6 +88,30 @@ def ask(req: AskRequest) -> AskResponse:
     """执行知识问答并返回稳定的 camelCase 响应。"""
     result = ask_service.ask(req.question, req.scenic_area_id, req.use_voice)
     return AskResponse.model_validate(result)
+
+
+@app.post("/engine/wiki/compile", response_model=WikiCompileResponse)
+def compile_wiki(req: WikiCompileRequest) -> WikiCompileResponse:
+    """将原始素材编译为结构化 Wiki；失败时返回 failed 而非 HTTP 500。"""
+    try:
+        file_path = wiki_compiler.compile_source(
+            req.content,
+            title=req.title,
+            scenic_area_id=req.scenic_area_id,
+            tags=req.tags,
+        )
+        index = wiki_compiler._read_index()
+        entry = wiki_compiler._find_index_entry(index, file_path) or {}
+        return WikiCompileResponse(
+            status="done",
+            file_path=file_path,
+            links=wiki_compiler._normalize_values(entry.get("links")),
+        )
+    except WikiCompileError as exc:
+        return WikiCompileResponse(status="failed", error=str(exc))
+    except (OSError, ValueError, TypeError) as exc:
+        # 文件系统和格式异常都在接口边界转成可识别失败，避免堆栈泄漏。
+        return WikiCompileResponse(status="failed", error="Wiki 编译或写入失败")
 
 
 @app.post("/engine/pose")
