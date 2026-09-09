@@ -1,77 +1,147 @@
-"""
-机架工程 Harness 模块
-=====================
-六组件：执行环境、工具注册表、上下文管理器、状态存储、生命周期钩子、评估接口。
+"""本地问答 Harness。
 
-策略：
-- LocalContextMiddleware：注入环境地图（景点分布/历史条目索引/CV 指令），
-  实现零回合定向（无需多轮对话即可定位游客所在景点）
-- 推理三明治：关键决策阶段用高推理模型，润色阶段用轻量模型
-- 验证门 + todo.md 协议：输出前核对 Wiki 权威引用，冲突则回滚
+MVP 版本实现本地上下文注入和受控 Wiki 检索，使用 Ollama 进行非流式中文问答。
+所有外部依赖均可替换/延迟加载，调用失败由 ``AskService`` 统一降级。
 """
 
-from typing import Any
+from __future__ import annotations
+
+import os
+import re
+from pathlib import Path
+from typing import Any, Mapping
+
+from engine.llm_wiki import WikiCompiler
+from engine.ollama_infer import OllamaClient
 
 
 class LocalContextMiddleware:
-    """本地上下文中间件：注入环境地图实现零回合定向"""
+    """本地上下文中间件：注入景区位置和 Wiki 索引信息。"""
+
+    def __init__(self, compiler: WikiCompiler | None = None) -> None:
+        self.compiler = compiler or WikiCompiler(
+            os.getenv("WIKI_DIR", "./wiki"), os.getenv("WIKI_BUILD_DIR", "./wiki_build")
+        )
 
     def inject_context(self, location: str | None = None) -> dict[str, Any]:
-        """
-        根据游客位置注入上下文：
-        - 景点分布地图
-        - 历史条目索引
-        - CV（计算机视觉）指令
+        """将 ``scenic_area:<id>`` 位置解析为可供检索使用的本地上下文。"""
+        scenic_area_id: int | None = None
+        if isinstance(location, str):
+            match = re.fullmatch(r"\s*scenic_area:(\d+)\s*", location)
+            if match:
+                scenic_area_id = int(match.group(1))
+        return {
+            "location": location,
+            "scenicAreaId": scenic_area_id,
+            "wikiBuildDir": str(self.compiler.build_dir),
+            "wikiCount": self._wiki_count(),
+            "instructions": "仅依据本地 Wiki 资料回答；资料不足时明确说明知识库暂无依据。",
+        }
 
-        TODO: 实现上下文注入逻辑
-        """
-        pass  # TODO
+    def retrieve(
+        self, query: str, context: Mapping[str, Any], limit: int = 4
+    ) -> list[dict[str, Any]]:
+        """检索与问题相关的少量 Wiki 条目，限制传给模型的上下文规模。"""
+        scenic_area_id = context.get("scenicAreaId")
+        references = self.compiler.retrieve(query, scenic_area_id=scenic_area_id)
+        return references[: max(1, min(limit, 8))]
+
+    def _wiki_count(self) -> int:
+        try:
+            return sum(1 for path in self.compiler.build_dir.rglob("*.md") if path.is_file())
+        except OSError:
+            return 0
 
 
 class Harness:
-    """AI 推理机架：编排 LLM Wiki 检索、推理三明治、验证门"""
+    """AI 推理机架：Wiki 检索 + Ollama 对话 + 最小验证门。"""
 
-    def __init__(self) -> None:
-        self.context_middleware = LocalContextMiddleware()
+    MAX_CONTEXT_CHARS = 6000
 
-    def reasoning_sandwich(self, query: str, context: dict[str, Any]) -> str:
-        """
-        推理三明治策略：
-        - 规划阶段：高推理模型分析意图、拆解子问题
-        - 执行阶段：检索 Wiki、调用工具
-        - 润色阶段：轻量模型生成最终自然语言回答
+    def __init__(
+        self,
+        ollama_client: OllamaClient | None = None,
+        context_middleware: LocalContextMiddleware | None = None,
+    ) -> None:
+        self.context_middleware = context_middleware or LocalContextMiddleware()
+        self.ollama_client = ollama_client or OllamaClient()
 
-        TODO: 实现三阶段推理流程
-        """
-        pass  # TODO
+    def reasoning_sandwich(
+        self, query: str, context: dict[str, Any], references: list[dict[str, Any]] | None = None
+    ) -> str:
+        """执行规划提示、资料问答和轻量润色的单次本地推理。"""
+        if references is None:
+            references = self.context_middleware.retrieve(query, context)
+        evidence = self._format_evidence(references)
+        system_prompt = (
+            "你是红色文旅离线讲解员。回答必须使用简体中文，优先依据给定 Wiki 资料。"
+            "如果资料没有回答问题，请明确说‘知识库暂无足够依据’，不要编造史实。"
+            "不要输出 JSON、不要输出思考过程、不要虚构 Wiki 路径。"
+        )
+        user_prompt = (
+            f"景区上下文：{context.get('location') or '未指定'}\n"
+            f"本地资料：\n{evidence or '（没有检索到相关 Wiki 资料）'}\n\n"
+            f"游客问题：{query}\n\n请给出简洁、适合游客阅读的回答。"
+        )
+        response = self.ollama_client.chat(
+            [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt},
+            ],
+            stream=False,
+        )
+        if not isinstance(response, str) or not response.strip():
+            raise RuntimeError("Ollama 返回空回答")
+        return response.strip()
 
     def verify_gate(self, answer: str, references: list[dict[str, Any]]) -> bool:
-        """
-        验证门：输出前核对 Wiki 权威引用。
-        - 检查回答中的事实声明是否有 Wiki 引用支撑
-        - 引用冲突时回滚，返回 False
-
-        TODO: 实现验证逻辑
-        """
-        pass  # TODO
+        """拒绝空回答；有引用时确保引用路径来自本次检索结果。"""
+        if not isinstance(answer, str) or not answer.strip():
+            return False
+        allowed_paths = {
+            str(reference.get("file_path"))
+            for reference in references
+            if isinstance(reference, Mapping) and reference.get("file_path")
+        }
+        if not allowed_paths:
+            return True
+        # 模型回答中若主动输出 wiki/路径，只允许本次命中的路径。
+        mentioned_paths = set(re.findall(r"wiki/[\w\-一-龥/ .]+", answer))
+        return not mentioned_paths or mentioned_paths.issubset(allowed_paths)
 
     def update_todo(self, tasks: list[str]) -> None:
-        """
-        维护 todo.md 协议：记录当前任务进度与未完成项。
-        - 供跨会话状态恢复与多步骤追踪
+        """保留 Harness 状态协议入口；MVP 不写用户目录，避免污染运行环境。"""
+        _ = tasks
 
-        TODO: 实现 todo.md 读写
-        """
-        pass  # TODO
+    def answer(self, question: str, location: str | None = None) -> dict[str, Any]:
+        """检索 Wiki 并调用 Ollama，返回 AskService 可直接规范化的结构化结果。"""
+        normalized_question = question.strip() if isinstance(question, str) else ""
+        if not normalized_question:
+            raise ValueError("问题不能为空")
+        context = self.context_middleware.inject_context(location)
+        references = self.context_middleware.retrieve(normalized_question, context)
+        answer = self.reasoning_sandwich(normalized_question, context, references)
+        if not self.verify_gate(answer, references):
+            raise RuntimeError("回答引用未通过验证")
+        sources = [
+            str(reference["file_path"])
+            for reference in references
+            if isinstance(reference, Mapping) and reference.get("file_path")
+        ]
+        return {"answer": answer, "sources": list(dict.fromkeys(sources))}
 
-    def answer(self, question: str, location: str | None = None) -> str:
-        """
-        完整问答流程：
-        1. LocalContextMiddleware 注入上下文（零回合定向）
-        2. reasoning_sandwich 推理三明治生成回答
-        3. verify_gate 验证门核对引用
-        4. 验证通过返回回答，冲突则回滚重试
-
-        TODO: 实现完整编排逻辑
-        """
-        pass  # TODO
+    def _format_evidence(self, references: list[dict[str, Any]]) -> str:
+        chunks: list[str] = []
+        remaining = self.MAX_CONTEXT_CHARS
+        for reference in references:
+            title = str(reference.get("title") or "未命名条目")
+            file_path = str(reference.get("file_path") or "")
+            content = str(reference.get("content") or "").strip()
+            chunk = f"### {title}\n来源：{file_path}\n{content}\n"
+            if len(chunk) > remaining:
+                chunk = chunk[:remaining]
+            chunks.append(chunk)
+            remaining -= len(chunk)
+            if remaining <= 0:
+                break
+        return "\n".join(chunks)

@@ -296,7 +296,16 @@ class WikiCompiler:
 
     @staticmethod
     def _terms(query: str) -> list[str]:
-        terms = [term for term in re.split(r"\s+|[,，。！？；：、]+", query) if term]
+        segments = [segment for segment in re.split(r"\s+|[,，。！？；：、？]+", query) if segment]
+        terms: list[str] = []
+        for segment in segments:
+            if segment not in terms:
+                terms.append(segment)
+            if re.search(r"[\u3400-\u9fff]", segment):
+                for index in range(len(segment) - 1):
+                    gram = segment[index : index + 2]
+                    if gram not in terms:
+                        terms.append(gram)
         return terms or [query]
 
     @staticmethod
