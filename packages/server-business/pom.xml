@@ -30,6 +30,11 @@
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-web</artifactId>
         </dependency>
+        <!-- WebSocket（姿态帧流业务代理） -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-websocket</artifactId>
+        </dependency>
         <!-- AOP（用于角色校验切面 @RequireRole） -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
