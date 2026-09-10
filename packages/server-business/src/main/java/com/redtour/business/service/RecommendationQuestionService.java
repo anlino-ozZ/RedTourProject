@@ -9,6 +9,6 @@ import java.util.List;
  */
 public interface RecommendationQuestionService {
 
-    /** 查询指定景区的推荐问题，配置不足时由离线问题补足。 */
+    /** 查询指定景区的动态热门问题，不足时由静态配置和离线问题补足。 */
     List<RecommendationQuestionResult> listRecommendations(Long scenicAreaId);
 }

@@ -64,3 +64,7 @@ java -jar target/server-business.jar --spring.profiles.active=prod
 `POST http://localhost:8000/api/v1/ask` 将请求透传至 AI 引擎，并将结果写入
 `ask_log`。触摸屏可额外携带请求头 `X-Device-Id` 标记来源设备；AI 引擎或日志
 数据库短暂不可用时仍返回结构完整的降级结果。
+
+`GET http://localhost:8000/api/v1/ask/recommendations?scenicAreaId=<id>` 聚合指定景区
+最近 30 天的有效问答记录，动态热门问题优先；不足时依次由景区静态配置和统一离线问题
+补足至至少 5 条，最多返回 10 条。热门日志查询失败时仍可返回静态或离线推荐。
