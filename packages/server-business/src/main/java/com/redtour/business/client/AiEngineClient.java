@@ -2,26 +2,37 @@ package com.redtour.business.client;
 
 import com.redtour.business.dto.AskRequest;
 import com.redtour.business.dto.AskResult;
+import com.redtour.business.dto.SttResult;
 import com.redtour.business.dto.WikiCompileRequest;
+import com.redtour.business.exception.BusinessException;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.core.io.ByteArrayResource;
 import org.springframework.core.ParameterizedTypeReference;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpMethod;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Component;
+import org.springframework.util.LinkedMultiValueMap;
+import org.springframework.util.MultiValueMap;
+import org.springframework.web.client.HttpClientErrorException;
+import org.springframework.web.client.HttpServerErrorException;
 import org.springframework.web.client.ResourceAccessException;
 import org.springframework.web.client.RestClientException;
 import org.springframework.web.client.RestTemplate;
+import org.springframework.web.multipart.MultipartFile;
 
+import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Map;
 import java.util.regex.Pattern;
 
 /**
  * AI 引擎 HTTP 客户端
- * 对接 packages/ai-engine（:8001）的 /engine/health、/engine/ask、/engine/wiki/compile 接口
- * 所有对外方法均捕获异常并返回降级结果，避免上层业务被网络抖动打断
+ * 对接 packages/ai-engine（:8001）的健康检查、问答、Wiki 编译、STT 与 TTS 接口。
+ * 外部依赖异常统一转换为稳定降级结果或业务异常，避免 SDK 对象和底层堆栈泄漏。
  */
 @Slf4j
 @Component
@@ -117,6 +128,96 @@ public class AiEngineClient {
             log.warn("[AI] TTS 音频获取失败 (filename={})", filename, e);
             return null;
         }
+    }
+
+    /** 将上传音频作为 multipart 的 audio 字段转发给 AI 引擎。 */
+    public SttResult transcribe(MultipartFile audio) {
+        if (audio == null || audio.isEmpty()) {
+            throw new BusinessException(400, "音频文件不能为空");
+        }
+        try {
+            byte[] bytes = audio.getBytes();
+            String filename = safeFilename(audio.getOriginalFilename());
+            ByteArrayResource resource = new ByteArrayResource(bytes) {
+                @Override
+                public String getFilename() {
+                    return filename;
+                }
+            };
+
+            HttpHeaders partHeaders = new HttpHeaders();
+            partHeaders.setContentType(parseMediaType(audio.getContentType()));
+            HttpEntity<ByteArrayResource> filePart = new HttpEntity<>(resource, partHeaders);
+            MultiValueMap<String, Object> body = new LinkedMultiValueMap<>();
+            body.add("audio", filePart);
+
+            HttpHeaders headers = new HttpHeaders();
+            headers.setContentType(MediaType.MULTIPART_FORM_DATA);
+            ResponseEntity<SttResult> response = restTemplate.exchange(
+                    baseUrl + "/engine/stt",
+                    HttpMethod.POST,
+                    new HttpEntity<>(body, headers),
+                    SttResult.class);
+            SttResult result = response.getBody();
+            if (result == null) {
+                throw new BusinessException(5001, "AI 引擎返回空响应");
+            }
+            return result;
+        } catch (HttpClientErrorException e) {
+            throw mapSttClientError(e);
+        } catch (HttpServerErrorException e) {
+            log.warn("[AI] STT 引擎错误 (status={}, size={})",
+                    e.getStatusCode().value(), audio.getSize());
+            if (e.getStatusCode().value() == 503) {
+                throw new BusinessException(503, "语音识别服务暂不可用");
+            }
+            throw new BusinessException(5001, "语音识别服务异常");
+        } catch (ResourceAccessException e) {
+            log.error("[AI] STT 引擎连接超时或不可达 (size={})", audio.getSize(), e);
+            throw new BusinessException(503, "语音识别服务暂不可用");
+        } catch (IOException e) {
+            log.warn("[AI] STT 上传音频读取失败 (size={})", audio.getSize(), e);
+            throw new BusinessException(400, "音频文件读取失败");
+        } catch (BusinessException e) {
+            throw e;
+        } catch (RestClientException e) {
+            log.error("[AI] STT 请求异常 (size={})", audio.getSize(), e);
+            throw new BusinessException(5001, "语音识别服务异常");
+        } catch (Exception e) {
+            log.error("[AI] STT 未知异常 (size={})", audio.getSize(), e);
+            throw new BusinessException(5001, "语音识别服务异常");
+        }
+    }
+
+    private BusinessException mapSttClientError(HttpClientErrorException exception) {
+        int status = exception.getStatusCode().value();
+        return switch (status) {
+            case 400 -> new BusinessException(400, "音频格式不受支持或文件无效");
+            case 413 -> new BusinessException(413, "音频文件超过大小限制");
+            case 422 -> new BusinessException(422, "音频中未识别到有效语音，或时长超过限制");
+            default -> new BusinessException(5001, "语音识别服务异常");
+        };
+    }
+
+    private MediaType parseMediaType(String contentType) {
+        try {
+            return contentType == null || contentType.isBlank()
+                    ? MediaType.APPLICATION_OCTET_STREAM
+                    : MediaType.parseMediaType(contentType);
+        } catch (IllegalArgumentException e) {
+            return MediaType.APPLICATION_OCTET_STREAM;
+        }
+    }
+
+    private String safeFilename(String originalFilename) {
+        if (originalFilename == null || originalFilename.isBlank()) {
+            return "audio.wav";
+        }
+        String normalized = originalFilename.replace('\\', '/');
+        String filename = normalized.substring(normalized.lastIndexOf('/') + 1)
+                .replace('\r', '_')
+                .replace('\n', '_');
+        return filename.isBlank() ? "audio.wav" : filename;
     }
 
     /** 补齐 AI 引擎可能缺省的字段。 */

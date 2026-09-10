@@ -9,5 +9,7 @@ pydantic                     # 数据校验
 pydantic-settings            # 基于环境变量的配置管理
 markdown-it-py               # Markdown 渲染/解析（Wiki 页面处理）
 pyttsx3                      # 本地离线 TTS，输出 WAV 音频
+faster-whisper               # 本地离线 STT（Whisper small）
+python-multipart             # FastAPI 音频 multipart 上传解析
 # hailo-platform              # Hailo8L 加速库，仅树莓派环境按需安装
                               # （非树莓派开发机无需安装，代码中已做 try-except 降级）

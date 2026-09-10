@@ -44,6 +44,7 @@ ai-engine:
   base-url: http://localhost:8001
   connect-timeout-ms: 3000
   read-timeout-ms: 30000
+  stt-max-file-mb: ${STT_MAX_FILE_MB:20}
 
 # ===== 树莓派硬件 TCP 通信（对接 packages/hardware-rpi）=====
 hardware:

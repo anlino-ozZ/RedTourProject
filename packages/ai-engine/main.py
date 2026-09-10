@@ -8,14 +8,22 @@ ai-engine 入口
 import os
 
 import uvicorn
-from fastapi import FastAPI
-from fastapi import HTTPException
+from fastapi import FastAPI, File, HTTPException, UploadFile
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, ConfigDict, Field
 
 from engine.ask_service import AskService
 from engine.health import HealthChecker
 from engine.llm_wiki import WikiCompileError, WikiCompiler
+from engine.stt import (
+    SpeechTranscriber,
+    SttDurationError,
+    SttEmptyAudioError,
+    SttFileTooLargeError,
+    SttRecognitionError,
+    SttUnavailableError,
+    SttValidationError,
+)
 from engine.tts import TtsError, TtsSynthesizer
 
 # 创建 FastAPI 应用实例
@@ -32,6 +40,7 @@ wiki_compiler = WikiCompiler(
     build_dir=os.getenv("WIKI_BUILD_DIR", "./wiki_build"),
 )
 tts_synthesizer = TtsSynthesizer()
+speech_transcriber = SpeechTranscriber()
 
 
 class AskRequest(BaseModel):
@@ -74,6 +83,15 @@ class WikiCompileResponse(BaseModel):
     file_path: str | None = None
     links: list[str] = Field(default_factory=list)
     error: str | None = None
+
+
+class SttResponse(BaseModel):
+    """本地语音识别响应体。"""
+
+    model_config = ConfigDict(populate_by_name=True)
+
+    text: str
+    duration_ms: int = Field(alias="durationMs", ge=0)
 
 
 class PoseRequest(BaseModel):
@@ -126,6 +144,28 @@ def get_audio(filename: str) -> FileResponse:
     except TtsError as exc:
         raise HTTPException(status_code=404, detail="音频文件不存在") from exc
     return FileResponse(target, media_type="audio/wav", filename=filename)
+
+
+@app.post("/engine/stt", response_model=SttResponse, response_model_by_alias=True)
+def stt(audio: UploadFile = File(...)) -> SttResponse:
+    """识别 multipart 字段 ``audio`` 中的本地音频。"""
+    try:
+        result = speech_transcriber.transcribe(
+            audio.file,
+            filename=audio.filename,
+            content_type=audio.content_type,
+        )
+        return SttResponse.model_validate(result)
+    except SttFileTooLargeError as exc:
+        raise HTTPException(status_code=413, detail=str(exc)) from exc
+    except (SttDurationError, SttEmptyAudioError) as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except SttValidationError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except SttUnavailableError as exc:
+        raise HTTPException(status_code=503, detail="本地语音识别模型暂不可用") from exc
+    except SttRecognitionError as exc:
+        raise HTTPException(status_code=500, detail="音频解码或语音识别失败") from exc
 
 
 @app.post("/engine/pose")

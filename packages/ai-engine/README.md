@@ -55,6 +55,7 @@ uvicorn main:app --reload --host 0.0.0.0 --port 8001
 
 - 健康检查：<http://localhost:8001/engine/health>
 - 问答接口：`POST /engine/ask`
+- 语音识别：`POST /engine/stt`（multipart 字段 `audio`）
 - 姿态检测：`POST /engine/pose`
 - API 文档：<http://localhost:8001/docs>
 
@@ -65,6 +66,10 @@ uvicorn main:app --reload --host 0.0.0.0 --port 8001
 问答接口接收 `question`、可选的 `scenicAreaId` 与 `useVoice`，固定返回
 `question`、`answer`、`sources`、`durationMs`、`audioUrl`。底层 Ollama、Wiki
 或 TTS 尚未就绪时会返回可展示的降级答案，不会向调用方抛出依赖异常。
+
+语音识别接口接收 WAV、MP3、M4A、WebM、OGG 或 FLAC，默认限制 20MB、60 秒，返回
+`text` 与 `durationMs`。模型仅在首次识别时加载并复用；默认要求 `small` 模型已缓存在
+`STT_MODEL_DIR`，运行期间不会联网下载。空音频、静音、超限及模型不可用均返回明确错误。
 
 ## 目录结构
 
