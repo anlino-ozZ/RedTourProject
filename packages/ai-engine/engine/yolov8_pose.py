@@ -8,7 +8,10 @@ import os
 import threading
 from collections.abc import Callable, Sequence
 from pathlib import Path
+from time import perf_counter
 from typing import Any
+
+from engine.hailo_pose import HailoPoseBackend, HailoPoseError
 
 logger = logging.getLogger(__name__)
 
@@ -28,6 +31,60 @@ class PoseInferenceError(PoseError):
 ModelFactory = Callable[[str], Any]
 
 
+class PosePerformanceTracker:
+    """按固定帧窗口记录姿态推理吞吐，便于在 Hailo8L 上核验 30+ FPS。"""
+
+    def __init__(self, target_fps: float | None = None, window_frames: int | None = None) -> None:
+        self.target_fps = target_fps or self._positive_float_env("POSE_TARGET_FPS", 30.0)
+        self.window_frames = window_frames or self._positive_int_env(
+            "POSE_PERF_WINDOW_FRAMES", 30
+        )
+        self.frames = 0
+        self.inference_seconds = 0.0
+        self.last_fps: float | None = None
+        self._lock = threading.Lock()
+
+    def record(self, backend: str, elapsed_seconds: float) -> None:
+        """累计一次推理；仅对 Hailo 窗口输出性能日志。"""
+        if backend != "hailo":
+            return
+        with self._lock:
+            self.frames += 1
+            self.inference_seconds += max(0.0, elapsed_seconds)
+            if self.frames < self.window_frames:
+                return
+            self.last_fps = (
+                self.frames / self.inference_seconds
+                if self.inference_seconds > 0
+                else float("inf")
+            )
+            log = logger.info if self.last_fps >= self.target_fps else logger.warning
+            log(
+                "pose_performance backend=hailo fps=%.2f targetFps=%.2f frames=%d",
+                self.last_fps,
+                self.target_fps,
+                self.frames,
+            )
+            self.frames = 0
+            self.inference_seconds = 0.0
+
+    @staticmethod
+    def _positive_float_env(name: str, default: float) -> float:
+        try:
+            value = float(os.getenv(name, str(default)))
+            return value if value > 0 else default
+        except (TypeError, ValueError):
+            return default
+
+    @staticmethod
+    def _positive_int_env(name: str, default: int) -> int:
+        try:
+            value = int(os.getenv(name, str(default)))
+            return value if value > 0 else default
+        except (TypeError, ValueError):
+            return default
+
+
 class PoseDetector:
     """延迟加载 YOLOv8-pose，并将 COCO 关键点归类为互动动作。"""
 
@@ -36,11 +93,18 @@ class PoseDetector:
     def __init__(
         self,
         weights: str | None = None,
+        hailo_weights: str | None = None,
         hailo_enabled: bool | None = None,
         model: Any | None = None,
         model_factory: ModelFactory | None = None,
+        hailo_runtime_factory: ModelFactory | None = None,
+        performance_tracker: PosePerformanceTracker | None = None,
+        clock: Callable[[], float] = perf_counter,
     ) -> None:
         self.weights = weights or os.getenv("YOLO_WEIGHTS", "./weights/yolov8s-pose.pt")
+        self.hailo_weights = hailo_weights or os.getenv(
+            "HAILO_POSE_HEF", "./weights/yolov8n_pose_h8l.hef"
+        )
         self.hailo_enabled = (
             hailo_enabled
             if hailo_enabled is not None
@@ -49,6 +113,10 @@ class PoseDetector:
         )
         self.model = model
         self._model_factory = model_factory
+        self._hailo_runtime_factory = hailo_runtime_factory
+        self._backend = "custom" if model is not None else "unloaded"
+        self._performance_tracker = performance_tracker or PosePerformanceTracker()
+        self._clock = clock
         self._load_lock = threading.Lock()
         self._inference_lock = threading.Lock()
 
@@ -60,24 +128,23 @@ class PoseDetector:
             if self.model is not None:
                 return self.model
             try:
-                if self._model_factory is not None:
-                    self.model = self._model_factory(self.weights)
-                    return self.model
-
                 if self.hailo_enabled:
                     try:
-                        import hailo_platform  # noqa: F401
-                    except ImportError:
-                        logger.warning("Hailo SDK 不可用，姿态识别回退到本地 YOLO CPU 推理")
+                        hailo_backend = HailoPoseBackend(
+                            self.hailo_weights,
+                            runtime_factory=self._hailo_runtime_factory,
+                        )
+                        hailo_backend.load()
+                        self.model = hailo_backend
+                        self._backend = "hailo"
+                        return self.model
+                    except HailoPoseError as exc:
+                        logger.warning(
+                            "Hailo 姿态后端不可用，回退到本地 YOLO CPU 推理: %s", exc
+                        )
 
-                weight_path = Path(self.weights).expanduser().resolve()
-                if not weight_path.is_file():
-                    raise PoseUnavailableError("本地 YOLOv8-pose 权重不存在")
-                try:
-                    from ultralytics import YOLO
-                except ImportError as exc:
-                    raise PoseUnavailableError("ultralytics 未安装") from exc
-                self.model = YOLO(str(weight_path))
+                self.model = self._load_cpu_model()
+                self._backend = "ultralytics"
                 return self.model
             except PoseError:
                 raise
@@ -87,29 +154,70 @@ class PoseDetector:
     def detect(self, frame: Any) -> dict[str, Any]:
         """检测单帧中的主要人物，并返回动作、置信度和二维关键点。"""
         model = self.load()
+        started_at = self._clock()
         try:
+            if self._backend == "hailo":
+                try:
+                    prediction = model.predict(frame)
+                    return self._result_from_person(
+                        self._normalize_points(prediction.get("keypoints")),
+                        self._normalize_scores(prediction.get("scores")),
+                        self._clamp(prediction.get("confidence", 0.0)),
+                    )
+                except HailoPoseError as exc:
+                    logger.warning("Hailo 姿态推理失败，切换到本地 YOLO CPU 推理: %s", exc)
+                    model = self._fallback_to_cpu()
             with self._inference_lock:
                 results = model.predict(source=frame, verbose=False)
             result = self._first_result(results)
             if result is None:
                 return self._unknown_result()
             points, scores, detection_confidence = self._extract_person(result)
-            if not points:
-                return self._unknown_result()
-            action, rule_confidence = self._classify_with_confidence(points, scores)
-            if action == "unknown":
-                return {"action": "unknown", "confidence": 0.0, "keypoints": points}
-            base_confidence = detection_confidence or self._mean_confidence(scores)
-            confidence = self._clamp(base_confidence * (0.8 + 0.2 * rule_confidence))
-            return {
-                "action": action,
-                "confidence": round(confidence, 4),
-                "keypoints": points,
-            }
+            return self._result_from_person(points, scores, detection_confidence)
         except PoseError:
             raise
         except Exception as exc:
             raise PoseInferenceError("姿态模型推理失败") from exc
+        finally:
+            self._performance_tracker.record(self._backend, self._clock() - started_at)
+
+    def _load_cpu_model(self) -> Any:
+        if self._model_factory is not None:
+            return self._model_factory(self.weights)
+        weight_path = Path(self.weights).expanduser().resolve()
+        if not weight_path.is_file():
+            raise PoseUnavailableError("本地 YOLOv8-pose 权重不存在")
+        try:
+            from ultralytics import YOLO
+        except ImportError as exc:
+            raise PoseUnavailableError("ultralytics 未安装") from exc
+        return YOLO(str(weight_path))
+
+    def _fallback_to_cpu(self) -> Any:
+        with self._load_lock:
+            if self._backend == "hailo":
+                self.model = self._load_cpu_model()
+                self._backend = "ultralytics"
+            return self.model
+
+    def _result_from_person(
+        self,
+        points: list[list[float]],
+        scores: list[float],
+        detection_confidence: float,
+    ) -> dict[str, Any]:
+        if not points:
+            return self._unknown_result()
+        action, rule_confidence = self._classify_with_confidence(points, scores)
+        if action == "unknown":
+            return {"action": "unknown", "confidence": 0.0, "keypoints": points}
+        base_confidence = detection_confidence or self._mean_confidence(scores)
+        confidence = self._clamp(base_confidence * (0.8 + 0.2 * rule_confidence))
+        return {
+            "action": action,
+            "confidence": round(confidence, 4),
+            "keypoints": points,
+        }
 
     def classify_action(self, keypoints: Any) -> str:
         """根据 COCO 关键点坐标判定 salute、mill、wave 或 unknown。"""
@@ -267,6 +375,16 @@ class PoseDetector:
             [float(value) for value in values if isinstance(value, (int, float))]
             for values in raw_scores
             if isinstance(values, list)
+        ]
+
+    @staticmethod
+    def _normalize_scores(raw_scores: Any) -> list[float]:
+        if not isinstance(raw_scores, Sequence) or isinstance(raw_scores, (str, bytes)):
+            return []
+        return [
+            PoseDetector._clamp(score)
+            for score in raw_scores
+            if isinstance(score, (int, float))
         ]
 
     @classmethod

@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-import unittest
 import tempfile
+import unittest
 from pathlib import Path
 
 from engine.ask_service import FALLBACK_ANSWER, AskService
@@ -152,6 +152,36 @@ class AskServiceTest(unittest.TestCase):
         result = service.ask("尚未接入模型的问题")
 
         self.assertEqual(FALLBACK_ANSWER, result["answer"])
+
+    def test_logs_all_performance_stages_without_changing_contract(self) -> None:
+        def provider(_question: str, _scenic_id: int | None) -> dict[str, object]:
+            return {
+                "answer": "回答",
+                "sources": [],
+                "_stageTimings": {
+                    "retrievalMs": 12,
+                    "inferenceMs": 3200,
+                    "verificationMs": 3,
+                },
+            }
+
+        service = AskService(
+            answer_provider=provider,
+            clock=FakeClock(1.0, 4.5),
+            stage_clock=FakeClock(10.0, 10.1),
+        )
+
+        with self.assertLogs("engine.ask_service", level="WARNING") as captured:
+            result = service.ask("问题")
+
+        self.assertEqual(
+            {"question", "answer", "sources", "durationMs", "audioUrl"}, set(result)
+        )
+        self.assertIn("retrievalMs=12", captured.output[0])
+        self.assertIn("inferenceMs=3200", captured.output[0])
+        self.assertIn("verificationMs=3", captured.output[0])
+        self.assertIn("ttsMs=0", captured.output[0])
+        self.assertIn("durationMs=3500", captured.output[0])
 
 
 if __name__ == "__main__":

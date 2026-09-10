@@ -28,17 +28,23 @@ class HealthChecker:
         ollama_host: str | None = None,
         ollama_model: str | None = None,
         wiki_build_dir: str | Path | None = None,
+        hailo_pose_hef: str | Path | None = None,
         hailo_enabled: bool | None = None,
         timeout_seconds: float | None = None,
         url_opener: Callable[..., Any] = urlopen,
     ) -> None:
-        self.ollama_host = (ollama_host or os.getenv("OLLAMA_HOST", "http://localhost:11434")).rstrip(
-            "/"
+        configured_ollama_host = ollama_host or os.getenv(
+            "OLLAMA_HOST", "http://localhost:11434"
         )
+        self.ollama_host = configured_ollama_host.rstrip("/")
         self.ollama_model = ollama_model or os.getenv("OLLAMA_MODEL", "qwen2.5:7b")
         self.wiki_build_dir = Path(
             wiki_build_dir or os.getenv("WIKI_BUILD_DIR", "./wiki_build")
         )
+        self.hailo_pose_hef = Path(
+            hailo_pose_hef
+            or os.getenv("HAILO_POSE_HEF", "./weights/yolov8n_pose_h8l.hef")
+        ).expanduser()
         if hailo_enabled is None:
             hailo_enabled = os.getenv("HAILO_ENABLED", "false").strip().lower() in {
                 "1",
@@ -95,13 +101,15 @@ class HealthChecker:
             return "unavailable"
 
     def _check_hailo(self) -> str:
-        """Hailo 未启用时返回 disabled；启用后检查是否能发现设备。"""
+        """Hailo 未启用时返回 disabled；启用后检查设备和 HEF 姿态模型。"""
         if not self.hailo_enabled:
             return "disabled"
         try:
             hailo_platform = importlib.import_module("hailo_platform")
             device_type = getattr(hailo_platform, "Device")
-            return "active" if device_type.scan() else "unavailable"
+            if not device_type.scan() or not self.hailo_pose_hef.is_file():
+                return "unavailable"
+            return "active"
         # Hailo SDK 在不同版本和硬件状态下可能抛出不同异常，统一降级。
         except Exception:
             return "unavailable"

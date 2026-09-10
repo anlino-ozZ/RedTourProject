@@ -8,11 +8,15 @@ from __future__ import annotations
 
 import os
 import re
+from collections.abc import Callable
 from pathlib import Path
+from time import perf_counter
 from typing import Any, Mapping
 
 from engine.llm_wiki import WikiCompileError, WikiCompiler
 from engine.ollama_infer import OllamaClient
+
+STAGE_TIMINGS_KEY = "_stageTimings"
 
 
 class LocalContextMiddleware:
@@ -30,12 +34,17 @@ class LocalContextMiddleware:
             match = re.fullmatch(r"\s*scenic_area:(\d+)\s*", location)
             if match:
                 scenic_area_id = int(match.group(1))
+        try:
+            entries = self.compiler._read_index().get("entries", [])
+        except WikiCompileError:
+            entries = []
         return {
             "location": location,
             "scenicAreaId": scenic_area_id,
             "wikiBuildDir": str(self.compiler.build_dir),
-            "wikiCount": self._wiki_count(),
-            "wikiEntries": self._wiki_entries(scenic_area_id),
+            "wikiCount": self._wiki_count(entries),
+            "wikiEntries": self._wiki_entries(scenic_area_id, entries),
+            "_wikiIndex": {"version": 1, "entries": entries},
             "instructions": "仅依据本地 Wiki 资料回答；资料不足时明确说明知识库暂无依据。",
         }
 
@@ -44,7 +53,12 @@ class LocalContextMiddleware:
     ) -> list[dict[str, Any]]:
         """检索与问题相关的少量 Wiki 条目，限制传给模型的上下文规模。"""
         scenic_area_id = context.get("scenicAreaId")
-        references = self.compiler.retrieve(query, scenic_area_id=scenic_area_id)
+        index = context.get("_wikiIndex")
+        references = self.compiler.retrieve(
+            query,
+            scenic_area_id=scenic_area_id,
+            index=index if isinstance(index, dict) else None,
+        )
         valid_references = [
             reference
             for reference in references
@@ -63,17 +77,22 @@ class LocalContextMiddleware:
         except (OSError, ValueError):
             return False
 
-    def _wiki_count(self) -> int:
-        try:
-            return sum(1 for path in self.compiler.build_dir.rglob("*.md") if path.is_file())
-        except OSError:
+    @staticmethod
+    def _wiki_count(entries: Any) -> int:
+        """使用已缓存索引计数，避免每次问答递归扫描构建目录。"""
+        if not isinstance(entries, list):
             return 0
+        return sum(
+            1
+            for entry in entries
+            if isinstance(entry, Mapping) and str(entry.get("file_path") or "").endswith(".md")
+        )
 
-    def _wiki_entries(self, scenic_area_id: int | None) -> list[dict[str, Any]]:
+    def _wiki_entries(
+        self, scenic_area_id: int | None, entries: Any
+    ) -> list[dict[str, Any]]:
         """注入当前景区的条目地图，不携带正文，避免上下文无界增长。"""
-        try:
-            entries = self.compiler._read_index().get("entries", [])
-        except WikiCompileError:
+        if not isinstance(entries, list):
             return []
         result: list[dict[str, Any]] = []
         for entry in entries:
@@ -107,14 +126,23 @@ class Harness:
         self,
         ollama_client: OllamaClient | None = None,
         context_middleware: LocalContextMiddleware | None = None,
+        clock: Callable[[], float] = perf_counter,
     ) -> None:
         self.context_middleware = context_middleware or LocalContextMiddleware()
         self.ollama_client = ollama_client or OllamaClient()
+        self._clock = clock
         default_model = getattr(self.ollama_client, "model", OllamaClient.DEFAULT_MODEL)
         self.reasoning_model = os.getenv("OLLAMA_REASONING_MODEL", default_model)
         self.polish_model = os.getenv(
             "OLLAMA_LIGHT_MODEL", os.getenv("OLLAMA_MODEL", default_model)
         )
+        self.max_context_chars = self._positive_int_env(
+            "WIKI_MAX_CONTEXT_CHARS", self.MAX_CONTEXT_CHARS
+        )
+        self.reasoning_max_tokens = self._positive_int_env(
+            "OLLAMA_REASONING_MAX_TOKENS", 128
+        )
+        self.answer_max_tokens = self._positive_int_env("OLLAMA_ANSWER_MAX_TOKENS", 256)
 
     def reasoning_sandwich(
         self, query: str, context: dict[str, Any], references: list[dict[str, Any]] | None = None
@@ -141,6 +169,7 @@ class Harness:
             ],
             model=self.reasoning_model,
             stream=False,
+            options={"num_predict": self.reasoning_max_tokens},
         )
         if not isinstance(plan, str) or not plan.strip():
             raise RuntimeError("推理规划为空")
@@ -163,6 +192,7 @@ class Harness:
             ],
             model=self.polish_model,
             stream=False,
+            options={"num_predict": self.answer_max_tokens},
         )
         if not isinstance(response, str) or not response.strip():
             raise RuntimeError("Ollama 返回空回答")
@@ -196,26 +226,48 @@ class Harness:
         normalized_question = question.strip() if isinstance(question, str) else ""
         if not normalized_question:
             raise ValueError("问题不能为空")
+
+        retrieval_started_at = self._clock()
         context = self.context_middleware.inject_context(location)
         references = self.context_middleware.retrieve(normalized_question, context)
+        retrieval_ms = self._elapsed_ms(retrieval_started_at)
         if not references:
             return {
                 "answer": "知识库暂无足够依据，暂时无法可靠回答这个问题。",
                 "sources": [],
+                STAGE_TIMINGS_KEY: {
+                    "retrievalMs": retrieval_ms,
+                    "inferenceMs": 0,
+                    "verificationMs": 0,
+                },
             }
+
+        inference_started_at = self._clock()
         answer = self.reasoning_sandwich(normalized_question, context, references)
+        inference_ms = self._elapsed_ms(inference_started_at)
+
+        verification_started_at = self._clock()
         if not self.verify_gate(answer, references):
             raise RuntimeError("回答引用未通过验证")
+        verification_ms = self._elapsed_ms(verification_started_at)
         sources = [
             str(reference["file_path"])
             for reference in references
             if isinstance(reference, Mapping) and reference.get("file_path")
         ]
-        return {"answer": answer, "sources": list(dict.fromkeys(sources))}
+        return {
+            "answer": answer,
+            "sources": list(dict.fromkeys(sources)),
+            STAGE_TIMINGS_KEY: {
+                "retrievalMs": retrieval_ms,
+                "inferenceMs": inference_ms,
+                "verificationMs": verification_ms,
+            },
+        }
 
     def _format_evidence(self, references: list[dict[str, Any]]) -> str:
         chunks: list[str] = []
-        remaining = self.MAX_CONTEXT_CHARS
+        remaining = self.max_context_chars
         for reference in references:
             title = str(reference.get("title") or "未命名条目")
             file_path = str(reference.get("file_path") or "")
@@ -234,3 +286,14 @@ class Harness:
         """提取模型可能输出的 Wiki 路径，去除中文标点造成的误差。"""
         matches = re.findall(r"wiki/[^\s，。！？；：,\)）\]】]+", answer)
         return {match.rstrip(".。；，,") for match in matches}
+
+    def _elapsed_ms(self, started_at: float) -> int:
+        return max(0, round((self._clock() - started_at) * 1000))
+
+    @staticmethod
+    def _positive_int_env(name: str, default: int) -> int:
+        try:
+            value = int(os.getenv(name, str(default)))
+            return value if value > 0 else default
+        except (TypeError, ValueError):
+            return default

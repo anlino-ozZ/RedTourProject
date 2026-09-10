@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import tempfile
+import time
 import unittest
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 from engine.tts import TtsError, TtsSynthesizer
@@ -62,6 +64,24 @@ class TtsSynthesizerTest(unittest.TestCase):
 
         with self.assertRaises(TtsError):
             synthesizer.synthesize("有内容的问题")
+
+    def test_concurrent_first_requests_initialize_engine_once(self) -> None:
+        root = Path(tempfile.mkdtemp())
+        engine = FakeEngine()
+        factory_calls = 0
+
+        def factory() -> FakeEngine:
+            nonlocal factory_calls
+            factory_calls += 1
+            time.sleep(0.02)
+            return engine
+
+        synthesizer = TtsSynthesizer(root, engine_factory=factory)
+        with ThreadPoolExecutor(max_workers=4) as executor:
+            urls = list(executor.map(synthesizer.synthesize, ["回答"] * 4))
+
+        self.assertEqual(1, factory_calls)
+        self.assertEqual(4, len(urls))
 
 
 if __name__ == "__main__":

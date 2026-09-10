@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import os
+import threading
 from collections.abc import Iterable, Iterator, Mapping
 from typing import Any
 
@@ -38,31 +39,52 @@ class OllamaClient:
         host: str | None = None,
         model: str | None = None,
         client: Any | None = None,
+        timeout_seconds: float | None = None,
+        keep_alive: str | None = None,
     ) -> None:
         """初始化客户端；``ollama`` SDK 延迟到第一次调用时导入。"""
         self.host = (host or os.getenv("OLLAMA_HOST", self.DEFAULT_HOST)).rstrip("/")
         self.model = model or os.getenv("OLLAMA_MODEL", self.DEFAULT_MODEL)
+        self.timeout_seconds = self._positive_float(
+            timeout_seconds
+            if timeout_seconds is not None
+            else os.getenv("OLLAMA_TIMEOUT_SECONDS", "5"),
+            5.0,
+        )
+        self.keep_alive = (
+            keep_alive if keep_alive is not None else os.getenv("OLLAMA_KEEP_ALIVE", "30m")
+        ).strip()
         self._client: Any | None = client
+        self._client_lock = threading.Lock()
 
     def _get_client(self) -> Any:
         """延迟初始化 Ollama SDK 客户端。"""
         if self._client is not None:
             return self._client
-        try:
-            import ollama
-        except ImportError as exc:
-            raise OllamaUnavailableError("ollama 库未安装，请先安装本地 Ollama SDK") from exc
-        try:
-            self._client = ollama.Client(host=self.host)
-        except Exception as exc:
-            raise OllamaUnavailableError("Ollama 客户端初始化失败") from exc
-        return self._client
+        with self._client_lock:
+            if self._client is not None:
+                return self._client
+            try:
+                import ollama
+            except ImportError as exc:
+                raise OllamaUnavailableError("ollama 库未安装，请先安装本地 Ollama SDK") from exc
+            try:
+                try:
+                    self._client = ollama.Client(host=self.host, timeout=self.timeout_seconds)
+                except TypeError as exc:
+                    if "timeout" not in str(exc):
+                        raise
+                    self._client = ollama.Client(host=self.host)
+            except Exception as exc:
+                raise OllamaUnavailableError("Ollama 客户端初始化失败") from exc
+            return self._client
 
     def chat(
         self,
         messages: list[dict[str, str]],
         model: str | None = None,
         stream: bool = False,
+        options: Mapping[str, Any] | None = None,
     ) -> str | Iterator[str]:
         """
         执行对话推理。
@@ -74,8 +96,14 @@ class OllamaClient:
         selected_model = self._normalize_model(model)
         client = self._get_client()
         try:
-            response = client.chat(
-                model=selected_model, messages=normalized_messages, stream=stream
+            response = self._call_with_keep_alive(
+                client.chat,
+                {
+                    "model": selected_model,
+                    "messages": normalized_messages,
+                    "stream": stream,
+                    "options": dict(options) if options else None,
+                },
             )
         except Exception as exc:
             raise self._classify_exception(exc, "Ollama 对话推理失败") from exc
@@ -101,9 +129,13 @@ class OllamaClient:
             raise OllamaResponseError("Ollama 客户端不支持 embedding 接口")
         try:
             if method_name == "embeddings":
-                response = method(model=selected_model, prompt=text.strip())
+                response = self._call_with_keep_alive(
+                    method, {"model": selected_model, "prompt": text.strip()}
+                )
             else:
-                response = method(model=selected_model, input=text.strip())
+                response = self._call_with_keep_alive(
+                    method, {"model": selected_model, "input": text.strip()}
+                )
         except Exception as exc:
             raise self._classify_exception(exc, "Ollama 向量化失败") from exc
         vector = self._extract_embedding(response)
@@ -147,6 +179,19 @@ class OllamaClient:
         if not selected_model:
             raise OllamaModelError("OLLAMA_MODEL 未配置")
         return selected_model
+
+    def _call_with_keep_alive(self, method: Any, arguments: dict[str, Any]) -> Any:
+        """请求 Ollama 保持模型常驻，并兼容不支持该参数的旧版 SDK。"""
+        clean_arguments = {key: value for key, value in arguments.items() if value is not None}
+        if self.keep_alive:
+            clean_arguments["keep_alive"] = self.keep_alive
+        try:
+            return method(**clean_arguments)
+        except TypeError as exc:
+            if "keep_alive" not in str(exc):
+                raise
+            clean_arguments.pop("keep_alive", None)
+            return method(**clean_arguments)
 
     @classmethod
     def _extract_text(cls, response: Any) -> str:
@@ -203,3 +248,11 @@ class OllamaClient:
         ):
             return OllamaUnavailableError(f"{prefix}：Ollama 服务不可达")
         return OllamaError(f"{prefix}：{message}")
+
+    @staticmethod
+    def _positive_float(value: float | str, default: float) -> float:
+        try:
+            numeric = float(value)
+            return numeric if numeric > 0 else default
+        except (TypeError, ValueError):
+            return default

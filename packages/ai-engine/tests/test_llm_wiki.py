@@ -6,6 +6,7 @@ import json
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from engine.llm_wiki import WikiCompileError, WikiCompiler
 
@@ -48,6 +49,23 @@ class WikiCompilerTest(unittest.TestCase):
         self.assertEqual(["wiki/长征"], links)
         self.assertGreaterEqual(len(results), 1)
         self.assertEqual("长征", results[0]["title"])
+
+    def test_reuses_index_cache_and_invalidates_after_external_write(self) -> None:
+        root = Path(tempfile.mkdtemp())
+        writer = WikiCompiler(root / "wiki", root / "build")
+        writer.compile_source("遵义会议在一九三五年召开，是历史转折。", "遵义会议", 1)
+        reader = WikiCompiler(root / "wiki", root / "build")
+
+        with patch("engine.llm_wiki.json.loads", wraps=json.loads) as json_loads:
+            reader.retrieve("遵义会议", scenic_area_id=1)
+            reader.retrieve("遵义会议", scenic_area_id=1)
+            self.assertEqual(1, json_loads.call_count)
+
+            writer.compile_source("四渡赤水展现了高超的军事指挥艺术。", "四渡赤水", 1)
+            results = reader.retrieve("四渡赤水", scenic_area_id=1)
+
+        self.assertEqual("四渡赤水", results[0]["title"])
+        self.assertEqual(2, json_loads.call_count)
 
     def test_build_all_compiles_supported_files_and_skips_others(self) -> None:
         compiler, source, build = self.make_compiler()

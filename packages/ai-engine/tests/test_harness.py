@@ -4,10 +4,10 @@ from __future__ import annotations
 
 import tempfile
 import unittest
-from unittest.mock import patch
 from pathlib import Path
+from unittest.mock import patch
 
-from engine.harness import Harness, LocalContextMiddleware
+from engine.harness import STAGE_TIMINGS_KEY, Harness, LocalContextMiddleware
 from engine.llm_wiki import WikiCompiler
 
 
@@ -25,6 +25,14 @@ class FakeOllama:
         if isinstance(self.answer, list):
             return self.answer[min(self.calls - 1, len(self.answer) - 1)]
         return self.answer
+
+
+class FakeClock:
+    def __init__(self, *values: float) -> None:
+        self._values = iter(values)
+
+    def __call__(self) -> float:
+        return next(self._values)
 
 
 class HarnessTest(unittest.TestCase):
@@ -145,6 +153,23 @@ class HarnessTest(unittest.TestCase):
 
         self.assertEqual("最终回答", result["answer"])
         self.assertEqual(["reasoning-model", "light-model"], ollama.models)
+
+    def test_answer_records_retrieval_inference_and_verification_timings(self) -> None:
+        root = Path(tempfile.mkdtemp())
+        compiler = WikiCompiler(root / "wiki", root / "build")
+        compiler.compile_source("遵义会议在1935年1月召开，是历史转折。", "遵义会议", 1)
+        harness = Harness(
+            ollama_client=FakeOllama(["规划", "最终回答"]),
+            context_middleware=LocalContextMiddleware(compiler),
+            clock=FakeClock(0.0, 0.01, 0.02, 0.22, 0.23, 0.235),
+        )
+
+        result = harness.answer("遵义会议何时召开？", location="scenic_area:1")
+
+        self.assertEqual(
+            {"retrievalMs": 10, "inferenceMs": 200, "verificationMs": 5},
+            result[STAGE_TIMINGS_KEY],
+        )
 
 
 if __name__ == "__main__":

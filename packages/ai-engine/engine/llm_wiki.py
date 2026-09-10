@@ -11,6 +11,8 @@ import json
 import os
 import re
 import tempfile
+import threading
+from copy import deepcopy
 from pathlib import Path
 from typing import Any, Iterable
 
@@ -33,6 +35,9 @@ class WikiCompiler:
         self.wiki_dir = Path(wiki_dir).expanduser()
         self.build_dir = Path(build_dir).expanduser().resolve()
         self.build_dir.mkdir(parents=True, exist_ok=True)
+        self._index_lock = threading.RLock()
+        self._cached_index: dict[str, Any] | None = None
+        self._cached_index_signature: tuple[int, int, int] | None = None
 
     def compile_source(
         self,
@@ -76,38 +81,45 @@ class WikiCompiler:
         content = target.read_text(encoding="utf-8")
         current_title = self._title_from_markdown(content) or target.stem
         links = self._extract_links(content)
-        index = self._read_index()
-        known_titles = {
-            str(entry.get("title")).strip()
-            for entry in index.get("entries", [])
-            if isinstance(entry, dict) and entry.get("title") and entry.get("file_path")
-        }
+        with self._index_lock:
+            index = self._read_index()
+            known_titles = {
+                str(entry.get("title")).strip()
+                for entry in index.get("entries", [])
+                if isinstance(entry, dict) and entry.get("title") and entry.get("file_path")
+            }
 
-        for known_title in known_titles:
-            if known_title != current_title and known_title in content:
-                canonical = self._canonical_link(known_title)
-                if canonical not in links and known_title in content:
-                    links.append(canonical)
+            for known_title in known_titles:
+                if known_title != current_title and known_title in content:
+                    canonical = self._canonical_link(known_title)
+                    if canonical not in links and known_title in content:
+                        links.append(canonical)
 
-        if links:
-            content = self._append_links_section(content, links)
-            self._atomic_write_text(target, content)
+            if links:
+                content = self._append_links_section(content, links)
+                self._atomic_write_text(target, content)
 
-        entry = self._find_index_entry(index, target.relative_to(self.build_dir).as_posix())
-        if entry is not None:
-            entry["links"] = links
-            entry["content"] = content
-            self._atomic_write_json(self._index_path(), index)
+            entry = self._find_index_entry(index, target.relative_to(self.build_dir).as_posix())
+            if entry is not None:
+                entry["links"] = links
+                entry["content"] = content
+                self._atomic_write_json(self._index_path(), index)
         return links
 
-    def retrieve(self, query: str, scenic_area_id: int | None = None) -> list[dict[str, Any]]:
+    def retrieve(
+        self,
+        query: str,
+        scenic_area_id: int | None = None,
+        index: dict[str, Any] | None = None,
+    ) -> list[dict[str, Any]]:
         """按标题、标签和正文关键词检索 Wiki 索引，返回相关度降序结果。"""
         normalized_query = self._clean_query(query)
         if not normalized_query:
             return []
         query_terms = self._terms(normalized_query)
         results: list[dict[str, Any]] = []
-        for entry in self._read_index().get("entries", []):
+        index_snapshot = index if index is not None else self._read_index()
+        for entry in index_snapshot.get("entries", []):
             if not isinstance(entry, dict):
                 continue
             if scenic_area_id is not None and not self._entry_matches_scenic_area(
@@ -226,27 +238,36 @@ class WikiCompiler:
         return self.build_dir / self.INDEX_FILE_NAME
 
     def _read_index(self) -> dict[str, Any]:
+        """读取索引快照；文件未变化时复用内存缓存。"""
         path = self._index_path()
-        if not path.exists():
-            return {"version": 1, "entries": []}
-        try:
-            payload = json.loads(path.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError) as exc:
-            raise WikiCompileError("Wiki 索引损坏，无法读取") from exc
-        if not isinstance(payload, dict) or not isinstance(payload.get("entries"), list):
-            raise WikiCompileError("Wiki 索引格式错误")
-        return payload
+        with self._index_lock:
+            signature = self._index_signature(path)
+            if self._cached_index is not None and signature == self._cached_index_signature:
+                return deepcopy(self._cached_index)
+            if signature is None:
+                payload: dict[str, Any] = {"version": 1, "entries": []}
+            else:
+                try:
+                    payload = json.loads(path.read_text(encoding="utf-8"))
+                except (OSError, json.JSONDecodeError) as exc:
+                    raise WikiCompileError("Wiki 索引损坏，无法读取") from exc
+                if not isinstance(payload, dict) or not isinstance(payload.get("entries"), list):
+                    raise WikiCompileError("Wiki 索引格式错误")
+            self._cached_index = deepcopy(payload)
+            self._cached_index_signature = signature
+            return deepcopy(payload)
 
     def _upsert_index_entry(self, entry: dict[str, Any]) -> None:
-        index = self._read_index()
-        entries = index.setdefault("entries", [])
-        existing = self._find_index_entry(index, str(entry["file_path"]))
-        if existing is None:
-            entries.append(entry)
-        else:
-            existing.update(entry)
-        entries.sort(key=lambda item: str(item.get("file_path", "")))
-        self._atomic_write_json(self._index_path(), index)
+        with self._index_lock:
+            index = self._read_index()
+            entries = index.setdefault("entries", [])
+            existing = self._find_index_entry(index, str(entry["file_path"]))
+            if existing is None:
+                entries.append(entry)
+            else:
+                existing.update(entry)
+            entries.sort(key=lambda item: str(item.get("file_path", "")))
+            self._atomic_write_json(self._index_path(), index)
 
     def _find_index_entry(self, index: dict[str, Any], file_path: str) -> dict[str, Any] | None:
         for entry in index.get("entries", []):
@@ -260,6 +281,12 @@ class WikiCompiler:
 
     def _atomic_write_json(self, target: Path, payload: dict[str, Any]) -> None:
         serialized = json.dumps(payload, ensure_ascii=False, indent=2) + "\n"
+        if target == self._index_path():
+            with self._index_lock:
+                self._atomic_write(target, serialized.encode("utf-8"))
+                self._cached_index = deepcopy(payload)
+                self._cached_index_signature = self._index_signature(target)
+            return
         self._atomic_write(target, serialized.encode("utf-8"))
 
     def _atomic_write(self, target: Path, data: bytes) -> None:
@@ -277,6 +304,16 @@ class WikiCompiler:
             except OSError:
                 pass
             raise
+
+    @staticmethod
+    def _index_signature(path: Path) -> tuple[int, int, int] | None:
+        try:
+            stat = path.stat()
+            return stat.st_mtime_ns, stat.st_ctime_ns, stat.st_size
+        except FileNotFoundError:
+            return None
+        except OSError as exc:
+            raise WikiCompileError("Wiki 索引状态无法读取") from exc
 
     @staticmethod
     def _normalize_values(values: Any) -> list[str]:

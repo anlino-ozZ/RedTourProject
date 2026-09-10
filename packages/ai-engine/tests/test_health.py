@@ -6,6 +6,7 @@ import json
 import tempfile
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import patch
 
 from engine.health import HealthChecker
@@ -74,6 +75,25 @@ class HealthCheckerTest(unittest.TestCase):
         self.assertEqual("degraded", snapshot["status"])
         self.assertEqual("unavailable", snapshot["ollama"])
         self.assertEqual("unavailable", snapshot["hailo"])
+
+    def test_hailo_requires_detected_device_and_local_hef_model(self) -> None:
+        def opener(*_args: object, **_kwargs: object) -> FakeHttpResponse:
+            return FakeHttpResponse({"models": [{"name": "qwen2.5:7b"}]})
+
+        fake_platform = SimpleNamespace(Device=SimpleNamespace(scan=lambda: ["device"]))
+        with tempfile.TemporaryDirectory() as directory:
+            hef = Path(directory) / "pose.hef"
+            hef.write_bytes(b"hef")
+            checker = HealthChecker(
+                hailo_enabled=True,
+                hailo_pose_hef=hef,
+                url_opener=opener,
+            )
+            with patch("engine.health.importlib.import_module", return_value=fake_platform):
+                snapshot = checker.check()
+
+        self.assertEqual("ok", snapshot["status"])
+        self.assertEqual("active", snapshot["hailo"])
 
     def test_malformed_ollama_response_is_safely_degraded(self) -> None:
         def opener(*_args: object, **_kwargs: object) -> FakeHttpResponse:

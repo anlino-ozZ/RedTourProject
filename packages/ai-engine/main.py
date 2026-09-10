@@ -15,6 +15,7 @@ from fastapi.responses import FileResponse
 from pydantic import BaseModel, ConfigDict, Field
 
 from engine.ask_service import AskService
+from engine.harness import Harness, LocalContextMiddleware
 from engine.health import HealthChecker
 from engine.llm_wiki import WikiCompileError, WikiCompiler
 from engine.pose_service import PoseService, PoseValidationError
@@ -43,12 +44,15 @@ app = FastAPI(
 )
 
 health_checker = HealthChecker()
-ask_service = AskService()
 wiki_compiler = WikiCompiler(
     wiki_dir=os.getenv("WIKI_DIR", "./wiki"),
     build_dir=os.getenv("WIKI_BUILD_DIR", "./wiki_build"),
 )
 tts_synthesizer = TtsSynthesizer()
+ask_service = AskService(
+    tts_synthesizer=tts_synthesizer,
+    harness=Harness(context_middleware=LocalContextMiddleware(wiki_compiler)),
+)
 speech_transcriber = SpeechTranscriber()
 pose_service = PoseService()
 pose_stream_protocol = PoseStreamProtocol()

@@ -45,6 +45,18 @@ class OllamaClientTest(unittest.TestCase):
                 client.chat([{"role": "user", "content": "问题"}]),
             )
 
+    def test_chat_keeps_model_alive_and_passes_token_limit(self) -> None:
+        fake = FakeOllama(response={"message": {"content": "回答"}})
+        client = OllamaClient(client=fake, keep_alive="45m")
+
+        client.chat(
+            [{"role": "user", "content": "问题"}],
+            options={"num_predict": 128},
+        )
+
+        self.assertEqual("45m", fake.chat_calls[0]["keep_alive"])
+        self.assertEqual({"num_predict": 128}, fake.chat_calls[0]["options"])
+
     def test_chat_stream_returns_only_text_chunks(self) -> None:
         client = OllamaClient(client=FakeOllama(response=[
             {"message": {"content": "第一句"}},

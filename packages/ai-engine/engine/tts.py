@@ -33,7 +33,8 @@ class TtsSynthesizer:
         self.public_prefix = configured_prefix.rstrip("/")
         self._engine_factory = engine_factory
         self._engine: Any | None = None
-        self._lock = threading.Lock()
+        self._engine_lock = threading.Lock()
+        self._synthesis_lock = threading.Lock()
 
     def synthesize(self, text: str) -> str:
         """将文本合成为 WAV 文件并返回相对 URL。"""
@@ -47,7 +48,7 @@ class TtsSynthesizer:
         target = self._resolve_target(filename)
         temporary = target.with_name(f".{target.stem}.tmp{target.suffix}")
         try:
-            with self._lock:
+            with self._synthesis_lock:
                 engine.save_to_file(normalized_text, str(temporary))
                 engine.runAndWait()
             if not temporary.is_file() or temporary.stat().st_size <= 0:
@@ -64,19 +65,22 @@ class TtsSynthesizer:
     def _get_engine(self) -> Any:
         if self._engine is not None:
             return self._engine
-        if self._engine_factory is not None:
-            factory = self._engine_factory
-        else:
+        with self._engine_lock:
+            if self._engine is not None:
+                return self._engine
+            if self._engine_factory is not None:
+                factory = self._engine_factory
+            else:
+                try:
+                    import pyttsx3
+                except ImportError as exc:
+                    raise TtsError("本地 TTS 引擎未安装") from exc
+                factory = pyttsx3.init
             try:
-                import pyttsx3
-            except ImportError as exc:
-                raise TtsError("本地 TTS 引擎未安装") from exc
-            factory = pyttsx3.init
-        try:
-            self._engine = factory()
-        except Exception as exc:
-            raise TtsError("本地 TTS 引擎初始化失败") from exc
-        return self._engine
+                self._engine = factory()
+            except Exception as exc:
+                raise TtsError("本地 TTS 引擎初始化失败") from exc
+            return self._engine
 
     def _resolve_target(self, filename: str) -> Path:
         target = (self.audio_dir / filename).resolve()
