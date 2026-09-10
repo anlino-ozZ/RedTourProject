@@ -2,6 +2,8 @@ package com.redtour.business.client;
 
 import com.redtour.business.dto.AskRequest;
 import com.redtour.business.dto.AskResult;
+import com.redtour.business.dto.PoseRecognizeRequest;
+import com.redtour.business.dto.PoseRecognizeResult;
 import com.redtour.business.dto.SttResult;
 import com.redtour.business.dto.WikiCompileRequest;
 import com.redtour.business.exception.BusinessException;
@@ -31,7 +33,7 @@ import java.util.regex.Pattern;
 
 /**
  * AI 引擎 HTTP 客户端
- * 对接 packages/ai-engine（:8001）的健康检查、问答、Wiki 编译、STT 与 TTS 接口。
+ * 对接 packages/ai-engine（:8001）的健康检查、问答、Wiki、语音和姿态接口。
  * 外部依赖异常统一转换为稳定降级结果或业务异常，避免 SDK 对象和底层堆栈泄漏。
  */
 @Slf4j
@@ -130,6 +132,31 @@ public class AiEngineClient {
         }
     }
 
+    /** 将 Base64 图像帧转发给 AI 引擎；依赖不可用时返回 unknown。 */
+    public PoseRecognizeResult recognizePose(PoseRecognizeRequest request) {
+        try {
+            ResponseEntity<PoseRecognizeResult> response = restTemplate.exchange(
+                    baseUrl + "/engine/pose",
+                    HttpMethod.POST,
+                    new HttpEntity<>(request),
+                    PoseRecognizeResult.class);
+            PoseRecognizeResult result = response.getBody();
+            return result == null ? buildPoseFallback() : result;
+        } catch (HttpClientErrorException e) {
+            log.warn("[AI] 姿态图片参数错误 (status={})", e.getStatusCode().value());
+            throw new BusinessException(400, "Base64 图片格式错误或超过限制");
+        } catch (ResourceAccessException e) {
+            log.error("[AI] 姿态识别引擎连接超时或不可达，返回 unknown", e);
+            return buildPoseFallback();
+        } catch (RestClientException e) {
+            log.error("[AI] 姿态识别请求异常，返回 unknown", e);
+            return buildPoseFallback();
+        } catch (Exception e) {
+            log.error("[AI] 姿态识别未知异常，返回 unknown", e);
+            return buildPoseFallback();
+        }
+    }
+
     /** 将上传音频作为 multipart 的 audio 字段转发给 AI 引擎。 */
     public SttResult transcribe(MultipartFile audio) {
         if (audio == null || audio.isEmpty()) {
@@ -218,6 +245,16 @@ public class AiEngineClient {
                 .replace('\r', '_')
                 .replace('\n', '_');
         return filename.isBlank() ? "audio.wav" : filename;
+    }
+
+    private PoseRecognizeResult buildPoseFallback() {
+        PoseRecognizeResult result = new PoseRecognizeResult();
+        result.setAction("unknown");
+        result.setConfidence(0.0);
+        result.setKeypoints(new ArrayList<>());
+        result.setTriggerContent(null);
+        result.setTimestamp(System.currentTimeMillis());
+        return result;
     }
 
     /** 补齐 AI 引擎可能缺省的字段。 */

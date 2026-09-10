@@ -15,6 +15,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from engine.ask_service import AskService
 from engine.health import HealthChecker
 from engine.llm_wiki import WikiCompileError, WikiCompiler
+from engine.pose_service import PoseService, PoseValidationError
 from engine.stt import (
     SpeechTranscriber,
     SttDurationError,
@@ -41,6 +42,7 @@ wiki_compiler = WikiCompiler(
 )
 tts_synthesizer = TtsSynthesizer()
 speech_transcriber = SpeechTranscriber()
+pose_service = PoseService()
 
 
 class AskRequest(BaseModel):
@@ -95,8 +97,34 @@ class SttResponse(BaseModel):
 
 
 class PoseRequest(BaseModel):
-    """姿态检测请求体"""
-    frame_path: str  # 图像路径（骨架阶段用路径占位，后续可改为 base64）
+    """Base64 单帧姿态识别请求体。"""
+
+    model_config = ConfigDict(populate_by_name=True, str_strip_whitespace=True)
+
+    frame: str = Field(min_length=1, max_length=14_100_000)
+    scenic_area_id: int | None = Field(default=None, alias="scenicAreaId", gt=0)
+
+
+class PoseTriggerResponse(BaseModel):
+    """动作命中后的互动内容。"""
+
+    model_config = ConfigDict(populate_by_name=True)
+
+    title: str
+    audio_url: str = Field(alias="audioUrl")
+    wiki_ref: str = Field(alias="wikiRef")
+
+
+class PoseResponse(BaseModel):
+    """姿态识别稳定响应体。"""
+
+    model_config = ConfigDict(populate_by_name=True)
+
+    action: str
+    confidence: float = Field(ge=0, le=1)
+    keypoints: list[list[float]] = Field(default_factory=list)
+    trigger_content: PoseTriggerResponse | None = Field(default=None, alias="triggerContent")
+    timestamp: int = Field(ge=0)
 
 
 @app.get("/engine/health")
@@ -168,11 +196,14 @@ def stt(audio: UploadFile = File(...)) -> SttResponse:
         raise HTTPException(status_code=500, detail="音频解码或语音识别失败") from exc
 
 
-@app.post("/engine/pose")
-def pose(req: PoseRequest) -> dict[str, str]:
-    """调用姿态检测器进行动作识别"""
-    # TODO: 接入 engine.yolov8_pose.PoseDetector.detect()
-    return {"action": "[TODO] 待接入 PoseDetector 处理图像", "path": req.frame_path}
+@app.post("/engine/pose", response_model=PoseResponse, response_model_by_alias=True)
+def pose(req: PoseRequest) -> PoseResponse:
+    """解码 Base64 图像并执行单帧姿态动作识别。"""
+    try:
+        result = pose_service.recognize(req.frame, req.scenic_area_id)
+        return PoseResponse.model_validate(result)
+    except PoseValidationError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 if __name__ == "__main__":

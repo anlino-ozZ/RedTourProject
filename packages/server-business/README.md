@@ -29,6 +29,7 @@ src/main/resources
 
 - **AI 引擎（HTTP）**：`AiEngineClient` 通过 RestTemplate 调用 `ai-engine`(:8001) 的健康检查、问答、Wiki、STT 与 TTS 接口。
 - **本地语音识别**：触摸屏上传至 `POST /api/v1/stt` 的 multipart `audio` 字段，由业务后端代理到 AI 引擎。
+- **姿态识别**：触摸屏调用 `POST /api/v1/pose/recognize`，业务后端代理 Base64 图像帧，前端无需直连 AI 引擎。
 - **树莓派硬件（TCP）**：`HardwareTcpClient` 通过 TCP 长连接（换行分隔 JSON）与 `hardware-rpi` 通信，地址见 `hardware.tcp.*`。
 
 ## 环境要求
