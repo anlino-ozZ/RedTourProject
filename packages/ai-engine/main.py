@@ -5,10 +5,12 @@ ai-engine 入口
 集成 Ollama LLM（Wiki 模式）、YOLOv8-pose 姿态检测、Hailo8L 加速。
 """
 
+import asyncio
 import os
 
 import uvicorn
-from fastapi import FastAPI, File, HTTPException, UploadFile
+from fastapi import FastAPI, File, HTTPException, Query, UploadFile, WebSocket, WebSocketDisconnect
+from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -16,6 +18,12 @@ from engine.ask_service import AskService
 from engine.health import HealthChecker
 from engine.llm_wiki import WikiCompileError, WikiCompiler
 from engine.pose_service import PoseService, PoseValidationError
+from engine.pose_stream import (
+    PoseStreamConnectionLimiter,
+    PoseStreamMessageTooLargeError,
+    PoseStreamProtocol,
+    PoseStreamProtocolError,
+)
 from engine.stt import (
     SpeechTranscriber,
     SttDurationError,
@@ -43,6 +51,8 @@ wiki_compiler = WikiCompiler(
 tts_synthesizer = TtsSynthesizer()
 speech_transcriber = SpeechTranscriber()
 pose_service = PoseService()
+pose_stream_protocol = PoseStreamProtocol()
+pose_stream_limiter = PoseStreamConnectionLimiter()
 
 
 class AskRequest(BaseModel):
@@ -204,6 +214,58 @@ def pose(req: PoseRequest) -> PoseResponse:
         return PoseResponse.model_validate(result)
     except PoseValidationError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.websocket("/engine/pose/stream")
+async def pose_stream(
+    websocket: WebSocket,
+    scenic_area_id: int | None = Query(default=None, alias="scenicAreaId", gt=0),
+) -> None:
+    """逐帧处理业务后端转发的姿态 WebSocket 消息。"""
+    if not pose_stream_limiter.try_acquire():
+        await websocket.accept()
+        await websocket.close(code=1013, reason="姿态识别连接已满")
+        return
+
+    idle_timeout = _positive_float_env("POSE_WS_IDLE_TIMEOUT_SECONDS", 60.0)
+    try:
+        await websocket.accept()
+        while True:
+            try:
+                message = await asyncio.wait_for(websocket.receive(), timeout=idle_timeout)
+                if message.get("type") == "websocket.disconnect":
+                    raise WebSocketDisconnect(code=message.get("code", 1000))
+                payload = message.get("text")
+                if not isinstance(payload, str):
+                    await websocket.close(code=1007, reason="姿态帧消息无效")
+                    break
+                frame = pose_stream_protocol.parse_frame(payload)
+                result = await run_in_threadpool(
+                    pose_service.recognize, frame, scenic_area_id
+                )
+                response = PoseResponse.model_validate(result)
+                await websocket.send_json(response.model_dump(by_alias=True))
+            except asyncio.TimeoutError:
+                await websocket.close(code=1001, reason="姿态连接空闲超时")
+                break
+            except PoseStreamMessageTooLargeError:
+                await websocket.close(code=1009, reason="姿态帧消息过大")
+                break
+            except (PoseStreamProtocolError, PoseValidationError):
+                await websocket.close(code=1007, reason="姿态帧消息无效")
+                break
+    except WebSocketDisconnect:
+        pass
+    finally:
+        pose_stream_limiter.release()
+
+
+def _positive_float_env(name: str, default: float) -> float:
+    try:
+        value = float(os.getenv(name, str(default)))
+        return value if value > 0 else default
+    except (TypeError, ValueError):
+        return default
 
 
 if __name__ == "__main__":

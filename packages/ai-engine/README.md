@@ -57,6 +57,7 @@ uvicorn main:app --reload --host 0.0.0.0 --port 8001
 - 问答接口：`POST /engine/ask`
 - 语音识别：`POST /engine/stt`（multipart 字段 `audio`）
 - 姿态检测：`POST /engine/pose`（JSON 字段 `frame`，支持纯 Base64/Data URL）
+- 姿态流：`WS /engine/pose/stream?scenicAreaId=<id>`（仅供业务后端代理）
 - API 文档：<http://localhost:8001/docs>
 
 健康检查固定返回 `status`、`engine`、`ollama`、`hailo`、`wikiCount`。Ollama
@@ -74,6 +75,9 @@ uvicorn main:app --reload --host 0.0.0.0 --port 8001
 姿态检测接口接收 Base64 图片及可选 `scenicAreaId`，限制 JPEG/PNG/WebP、10MB 和
 1200 万像素，固定返回 `action/confidence/keypoints/triggerContent/timestamp`。YOLO 权重或
 运行依赖不可用时返回 `action=unknown`，不会使接口崩溃。
+
+姿态 WebSocket 接收 `{"frame":"Base64/Data URL"}`，逐帧返回相同姿态结果结构；默认单条
+消息上限 1410 万字符、最大 20 个连接、空闲 60 秒关闭。稳定动作门控由业务后端代理执行。
 
 ## 目录结构
 

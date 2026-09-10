@@ -46,6 +46,17 @@ ai-engine:
   read-timeout-ms: 30000
   stt-max-file-mb: ${STT_MAX_FILE_MB:20}
 
+pose:
+  websocket:
+    ai-engine-url: ${AI_POSE_WS_URL:ws://localhost:8001/engine/pose/stream}
+    connect-timeout-ms: ${POSE_WS_CONNECT_TIMEOUT_MS:3000}
+    max-connections: ${POSE_WS_MAX_CONNECTIONS:20}
+    max-message-chars: ${POSE_WS_MAX_MESSAGE_CHARS:14100000}
+    idle-timeout-ms: ${POSE_WS_IDLE_TIMEOUT_MS:60000}
+    idle-scan-ms: ${POSE_WS_IDLE_SCAN_MS:10000}
+    stable-frames: ${POSE_WS_STABLE_FRAMES:3}
+    min-confidence: ${POSE_WS_MIN_CONFIDENCE:0.85}
+
 # ===== 树莓派硬件 TCP 通信（对接 packages/hardware-rpi）=====
 hardware:
   tcp:
