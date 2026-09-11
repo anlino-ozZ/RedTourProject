@@ -57,6 +57,7 @@ export function deleteAdminUser(id: number) {
 /** 景区列表查询参数 */
 export interface AdminScenicQuery extends PageQuery {
   keyword?: string
+  scenicAreaId?: number
 }
 
 /** 新增/编辑景区请求体 */

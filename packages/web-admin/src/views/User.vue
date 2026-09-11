@@ -11,12 +11,31 @@ import {
   type AdminUserItem,
   type AdminUserPayload,
 } from '@/api/admin'
-import type { UserRole } from '@red-tour-project/common'
+import { getScenicAreas } from '@/api'
+import type { UserRole, ScenicAreaInfo } from '@red-tour-project/common'
 
 // ===== 列表 =====
 const loading = ref(false)
 const tableData = ref<AdminUserItem[]>([])
 const total = ref(0)
+
+// ===== 景区下拉数据（用于绑定管辖景区）=====
+const scenicOptions = ref<ScenicAreaInfo[]>([])
+const scenicNameMap = computed(() => {
+  const map = new Map<number, string>()
+  for (const s of scenicOptions.value) {
+    map.set(s.id, s.name)
+  }
+  return map
+})
+
+async function loadScenicOptions() {
+  try {
+    scenicOptions.value = await getScenicAreas()
+  } catch {
+    // 错误提示已由拦截器统一弹出
+  }
+}
 
 const query = reactive({
   page: 1,
@@ -97,6 +116,17 @@ const rules: FormRules = {
   ],
   nickname: [{ max: 20, message: '昵称最多 20 字符', trigger: 'blur' }],
   role: [{ required: true, message: '请选择角色', trigger: 'change' }],
+  scenicAreaId: [
+    {
+      validator: (_rule, value: number | null, callback) => {
+        if (form.role === 'admin' && !value) {
+          return callback(new Error('普管必须绑定管辖景区'))
+        }
+        callback()
+      },
+      trigger: 'change',
+    },
+  ],
 }
 
 function resetForm() {
@@ -199,7 +229,10 @@ function statusTagType(status: number) {
 }
 
 // ===== 初始化 =====
-onMounted(loadList)
+onMounted(() => {
+  loadList()
+  loadScenicOptions()
+})
 </script>
 
 <template>
@@ -235,9 +268,11 @@ onMounted(loadList)
           </el-tag>
         </template>
       </el-table-column>
-      <el-table-column label="管辖景区" width="100">
+      <el-table-column label="管辖景区" width="140">
         <template #default="{ row }">
-          {{ row.scenicAreaId ?? '—' }}
+          {{
+            row.scenicAreaId ? (scenicNameMap.get(row.scenicAreaId) ?? `#${row.scenicAreaId}`) : '—'
+          }}
         </template>
       </el-table-column>
       <el-table-column label="状态" width="80">
@@ -301,13 +336,16 @@ onMounted(loadList)
             <el-option label="普通管理员" value="admin" />
           </el-select>
         </el-form-item>
-        <el-form-item v-if="form.role === 'admin'" label="管辖景区">
-          <el-input-number
+        <el-form-item v-if="form.role === 'admin'" label="管辖景区" prop="scenicAreaId">
+          <el-select
             v-model="form.scenicAreaId"
-            :min="1"
-            placeholder="景区 ID"
+            placeholder="请选择管辖景区"
+            filterable
+            clearable
             style="width: 100%"
-          />
+          >
+            <el-option v-for="s in scenicOptions" :key="s.id" :label="s.name" :value="s.id" />
+          </el-select>
         </el-form-item>
         <el-form-item label="状态">
           <el-switch

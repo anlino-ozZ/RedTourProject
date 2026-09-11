@@ -10,7 +10,13 @@ import {
   deleteAdminScenicArea,
   type AdminScenicPayload,
 } from '@/api/admin'
+import { useUserStore } from '@/store'
 import type { ScenicAreaInfo } from '@red-tour-project/common'
+
+const userStore = useUserStore()
+
+// 普管只读：仅查看管辖景区，不可增删改
+const isReadOnly = computed(() => !userStore.isSuperAdmin)
 
 // ===== 列表 =====
 const loading = ref(false)
@@ -26,10 +32,13 @@ const query = reactive({
 async function loadList() {
   loading.value = true
   try {
+    // 普管自动绑定管辖景区过滤
+    const scenicAreaId = isReadOnly.value ? userStore.userInfo?.scenicAreaId : undefined
     const res = await getAdminScenicAreas({
       page: query.page,
       pageSize: query.pageSize,
       keyword: query.keyword || undefined,
+      scenicAreaId,
     })
     tableData.value = res.list
     total.value = res.total
@@ -197,7 +206,9 @@ onMounted(loadList)
         />
         <RedButton type="primary" size="small" @click="handleSearch">搜索</RedButton>
       </div>
-      <RedButton type="primary" size="small" @click="openCreate">+ 新增景区</RedButton>
+      <RedButton v-if="!isReadOnly" type="primary" size="small" @click="openCreate">
+        + 新增景区
+      </RedButton>
     </div>
 
     <!-- 表格 -->
@@ -225,7 +236,7 @@ onMounted(loadList)
           </el-tag>
         </template>
       </el-table-column>
-      <el-table-column label="操作" width="140" fixed="right">
+      <el-table-column v-if="!isReadOnly" label="操作" width="140" fixed="right">
         <template #default="{ row }">
           <el-button link type="primary" size="small" @click="openEdit(row)">编辑</el-button>
           <el-button link type="danger" size="small" @click="handleDelete(row)">删除</el-button>
