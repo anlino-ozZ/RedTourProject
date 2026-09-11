@@ -363,3 +363,50 @@ export function updateAdminArtifact(id: number, data: AdminArtifactPayload) {
 export function deleteAdminArtifact(id: number) {
   return request.delete(`/admin/artifacts/${id}`) as Promise<null>
 }
+
+// ===== 管理端成就定义接口（接口文档 14.13 节，表 achievement）=====
+// 成就为全部景区公用的全局定义，无景区过滤；列表不分页（数据量小）
+
+/** 触发类型：visit 游览 / pose 姿态 / script 剧本 / checkin 打卡 */
+export type AchievementTriggerType = 'visit' | 'pose' | 'script' | 'checkin'
+
+/** 成就定义项 */
+export interface AdminAchievementItem {
+  id: number
+  title: string
+  icon?: string
+  description?: string
+  triggerType: AchievementTriggerType
+  /** JSON 触发条件，不同触发类型结构不同（visit 例：{ type: 'first_visit' }） */
+  triggerCondition?: Record<string, unknown> | null
+  createdAt: string
+}
+
+/** 新增/编辑成就请求体 */
+export interface AdminAchievementPayload {
+  title: string
+  icon?: string
+  description?: string
+  triggerType: AchievementTriggerType
+  triggerCondition?: Record<string, unknown> | null
+}
+
+/** 成就列表（全量，不分页） */
+export function getAdminAchievements() {
+  return request.get('/admin/achievements') as Promise<AdminAchievementItem[]>
+}
+
+/** 新增成就 */
+export function createAdminAchievement(data: AdminAchievementPayload) {
+  return request.post('/admin/achievements', data) as Promise<AdminAchievementItem>
+}
+
+/** 编辑成就 */
+export function updateAdminAchievement(id: number, data: AdminAchievementPayload) {
+  return request.put(`/admin/achievements/${id}`, data) as Promise<AdminAchievementItem>
+}
+
+/** 删除成就（仅未被用户解锁记录引用的可删除，由后端校验） */
+export function deleteAdminAchievement(id: number) {
+  return request.delete(`/admin/achievements/${id}`) as Promise<null>
+}

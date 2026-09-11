@@ -77,6 +77,13 @@ const routes: RouteRecordRaw[] = [
         component: () => import('@/views/Artifact.vue'),
         meta: { title: '文物管理' },
       },
+      {
+        path: 'achievement',
+        name: 'achievement',
+        component: () => import('@/views/Achievement.vue'),
+        // 成就为全局定义（无景区归属），仅超管可管理
+        meta: { title: '成就定义管理', roles: ['super_admin'] },
+      },
       // 统计等模块路由由后续 W-A-xx 任务在此追加
     ],
   },
