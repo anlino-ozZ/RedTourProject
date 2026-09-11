@@ -29,6 +29,12 @@ const routes: RouteRecordRaw[] = [
     meta: { title: '问答', showTabBar: true },
   },
   {
+    path: '/products',
+    name: 'products',
+    component: () => import('@/views/Products.vue'),
+    meta: { title: '特产中心', showTabBar: true },
+  },
+  {
     path: '/profile',
     name: 'profile',
     component: () => import('@/views/Profile.vue'),
