@@ -47,7 +47,13 @@ const routes: RouteRecordRaw[] = [
         component: () => import('@/views/Scenic.vue'),
         meta: { title: '景区管理' },
       },
-      // 路线/统计等模块路由由后续 W-A-xx 任务在此追加
+      {
+        path: 'route',
+        name: 'route',
+        component: () => import('@/views/Route.vue'),
+        meta: { title: '路线管理' },
+      },
+      // 统计等模块路由由后续 W-A-xx 任务在此追加
     ],
   },
   // 未匹配路由统一回首页（后续可替换为 404 页面）

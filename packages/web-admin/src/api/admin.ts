@@ -1,5 +1,12 @@
 import request from './request'
-import type { PageQuery, PageResult, UserRole, ScenicAreaInfo } from '@red-tour-project/common'
+import type {
+  PageQuery,
+  PageResult,
+  UserRole,
+  ScenicAreaInfo,
+  GuideRoute,
+  SpotInfo,
+} from '@red-tour-project/common'
 
 // ===== 管理端用户管理接口（前缀 /admin，接口文档 14.1 节）=====
 
@@ -90,4 +97,62 @@ export function updateAdminScenicArea(id: number, data: AdminScenicPayload) {
 /** 删除景区 */
 export function deleteAdminScenicArea(id: number) {
   return request.delete(`/admin/scenic-areas/${id}`) as Promise<null>
+}
+
+// ===== 管理端景点列表接口（供路线选择景点用）=====
+
+/** 管理端景点列表项（比 SpotInfo 多 scenicAreaId） */
+export interface AdminSpotItem extends SpotInfo {
+  scenicAreaId: number
+}
+
+/** 按景区获取景点列表（不分页，供下拉选择用） */
+export function getAdminSpots(scenicAreaId: number) {
+  return request.get('/admin/spots', {
+    params: { scenicAreaId },
+  }) as Promise<AdminSpotItem[]>
+}
+
+// ===== 管理端导览路线管理接口（接口文档 14.3 节）=====
+
+/** 管理端路线列表项（比 GuideRoute 多 scenicAreaId） */
+export interface AdminRouteItem extends GuideRoute {
+  scenicAreaId: number
+}
+
+/** 路线列表查询参数 */
+export interface AdminRouteQuery extends PageQuery {
+  keyword?: string
+  scenicAreaId?: number
+}
+
+/** 新增/编辑路线请求体 */
+export interface AdminRoutePayload {
+  name: string
+  scenicAreaId: number
+  description?: string
+  spotIds: number[]
+  duration: number
+  difficulty?: 'easy' | 'medium' | 'hard'
+  status?: number
+}
+
+/** 路线列表（分页） */
+export function getAdminRoutes(params: AdminRouteQuery) {
+  return request.get('/admin/routes', { params }) as Promise<PageResult<AdminRouteItem>>
+}
+
+/** 新增路线 */
+export function createAdminRoute(data: AdminRoutePayload) {
+  return request.post('/admin/routes', data) as Promise<AdminRouteItem>
+}
+
+/** 编辑路线 */
+export function updateAdminRoute(id: number, data: AdminRoutePayload) {
+  return request.put(`/admin/routes/${id}`, data) as Promise<AdminRouteItem>
+}
+
+/** 删除路线 */
+export function deleteAdminRoute(id: number) {
+  return request.delete(`/admin/routes/${id}`) as Promise<null>
 }
