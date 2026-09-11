@@ -14,6 +14,8 @@ import {
   type AdminAchievementPayload,
   type AchievementTriggerType,
 } from '@/api/admin'
+import { resolveFileUrl } from '@/api/upload'
+import UploadFile from '@/components/UploadFile.vue'
 
 // ===== 触发类型元信息 =====
 const triggerMeta: Record<
@@ -242,6 +244,11 @@ async function handleDelete(row: AdminAchievementItem) {
 }
 
 // ===== 工具函数 =====
+/** 表格图标预览列表：相对路径需解析为完整地址 */
+function previewIcon(icon?: string) {
+  return icon ? [resolveFileUrl(icon)] : []
+}
+
 function conditionSummary(row: AdminAchievementItem) {
   if (!row.triggerCondition || Object.keys(row.triggerCondition).length === 0) return '—'
   return JSON.stringify(row.triggerCondition)
@@ -281,10 +288,10 @@ onMounted(() => {
         <template #default="{ row }">
           <el-image
             v-if="row.icon"
-            :src="row.icon"
+            :src="resolveFileUrl(row.icon)"
             fit="cover"
             class="achievement-page__icon"
-            :preview-src-list="[row.icon]"
+            :preview-src-list="previewIcon(row.icon)"
             preview-teleported
           />
           <span v-else class="achievement-page__no-icon">无</span>
@@ -335,16 +342,8 @@ onMounted(() => {
           <el-input v-model="form.title" placeholder="1-50 字符" />
         </el-form-item>
         <el-form-item label="图标">
-          <el-input v-model="form.icon" placeholder="选填，图标图片 URL" />
-        </el-form-item>
-        <el-form-item v-if="form.icon" label="图标预览">
-          <el-image
-            :src="form.icon"
-            fit="cover"
-            class="achievement-page__preview"
-            :preview-src-list="[form.icon]"
-            preview-teleported
-          />
+          <!-- 成就为全局资源，图标不属于任何景区，不传 scenicAreaId -->
+          <UploadFile v-model="form.icon" type="icon" />
         </el-form-item>
         <el-form-item label="成就描述" prop="description">
           <el-input
@@ -451,14 +450,6 @@ onMounted(() => {
       font-family: Consolas, Monaco, 'Courier New', monospace;
       font-size: @font-size-sm;
     }
-  }
-
-  &__preview {
-    width: 64px;
-    height: 64px;
-    border-radius: 50%;
-    border: 1px solid @color-border;
-    cursor: pointer;
   }
 }
 </style>

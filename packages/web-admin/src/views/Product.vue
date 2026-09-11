@@ -14,6 +14,8 @@ import {
   type ProductCategory,
 } from '@/api/admin'
 import { getScenicAreas } from '@/api'
+import { resolveFileUrl } from '@/api/upload'
+import UploadFile from '@/components/UploadFile.vue'
 import { useUserStore } from '@/store'
 import type { ScenicAreaInfo } from '@red-tour-project/common'
 
@@ -299,12 +301,7 @@ onMounted(() => {
           filterable
           style="width: 170px"
         >
-          <el-option
-            v-for="s in scenicOptions"
-            :key="s.id"
-            :label="s.name"
-            :value="s.id"
-          />
+          <el-option v-for="s in scenicOptions" :key="s.id" :label="s.name" :value="s.id" />
         </el-select>
         <RedButton type="primary" size="small" @click="handleSearch">搜索</RedButton>
       </div>
@@ -319,10 +316,10 @@ onMounted(() => {
         <template #default="{ row }">
           <el-image
             v-if="row.image"
-            :src="row.image"
+            :src="resolveFileUrl(row.image)"
             fit="cover"
             class="product-page__thumb"
-            :preview-src-list="[row.image]"
+            :preview-src-list="[resolveFileUrl(row.image)]"
             preview-teleported
           />
           <span v-else class="product-page__no-img">无图</span>
@@ -399,12 +396,7 @@ onMounted(() => {
             :disabled="isReadOnly"
             style="width: 100%"
           >
-            <el-option
-              v-for="s in scenicOptions"
-              :key="s.id"
-              :label="s.name"
-              :value="s.id"
-            />
+            <el-option v-for="s in scenicOptions" :key="s.id" :label="s.name" :value="s.id" />
           </el-select>
         </el-form-item>
         <el-form-item label="分类" prop="category">
@@ -434,24 +426,10 @@ onMounted(() => {
           />
         </el-form-item>
         <el-form-item label="产品图片">
-          <el-input v-model="form.image" placeholder="选填，图片 URL" />
-        </el-form-item>
-        <el-form-item v-if="form.image" label="图片预览">
-          <el-image
-            :src="form.image"
-            fit="cover"
-            class="product-page__preview"
-            :preview-src-list="[form.image]"
-            preview-teleported
-          />
+          <UploadFile v-model="form.image" type="image" :scenic-area-id="form.scenicAreaId" />
         </el-form-item>
         <el-form-item label="产品描述">
-          <el-input
-            v-model="form.description"
-            type="textarea"
-            :rows="3"
-            placeholder="选填"
-          />
+          <el-input v-model="form.description" type="textarea" :rows="3" placeholder="选填" />
         </el-form-item>
         <el-form-item label="状态">
           <el-switch
@@ -509,14 +487,6 @@ onMounted(() => {
     background: @color-bg-page;
     color: @color-text-secondary;
     font-size: @font-size-sm;
-  }
-
-  &__preview {
-    width: 120px;
-    height: 120px;
-    border-radius: 4px;
-    border: 1px solid @color-border;
-    cursor: pointer;
   }
 
   &__price {

@@ -13,6 +13,8 @@ import {
   type AdminArtifactPayload,
 } from '@/api/admin'
 import { getScenicAreas } from '@/api'
+import { resolveFileUrl } from '@/api/upload'
+import UploadFile from '@/components/UploadFile.vue'
 import { useUserStore } from '@/store'
 import type { ScenicAreaInfo } from '@red-tour-project/common'
 
@@ -106,7 +108,7 @@ const form = reactive<{
   category: string
   location: string
   intro: string
-  imageList: string[] // 图片 URL 动态列表，提交时过滤空值映射到 images
+  images: string[] // 文物图片 URL 数组（UploadFile 多图组件直接维护）
   wikiRef: string
   status: number
 }>({
@@ -117,7 +119,7 @@ const form = reactive<{
   category: '',
   location: '',
   intro: '',
-  imageList: [''],
+  images: [],
   wikiRef: '',
   status: 1,
 })
@@ -134,25 +136,7 @@ const rules: FormRules = {
   location: [{ max: 100, message: '地点最多 100 字符', trigger: 'blur' }],
 }
 
-// ===== 图片 URL 动态行 =====
-function addImageRow() {
-  if (form.imageList.length >= 9) {
-    ElMessage.warning('最多上传 9 张图片')
-    return
-  }
-  form.imageList.push('')
-}
-
-function removeImageRow(index: number) {
-  form.imageList.splice(index, 1)
-  if (form.imageList.length === 0) {
-    form.imageList.push('')
-  }
-}
-
-/** 已填写的有效图片 URL（用于预览） */
-const validImages = computed(() => form.imageList.map((u) => u.trim()).filter(Boolean))
-
+// ===== 表单重置/回填 =====
 function resetForm() {
   form.id = undefined
   form.scenicAreaId = boundScenicAreaId.value
@@ -161,7 +145,7 @@ function resetForm() {
   form.category = ''
   form.location = ''
   form.intro = ''
-  form.imageList = ['']
+  form.images = []
   form.wikiRef = ''
   form.status = 1
 }
@@ -182,7 +166,7 @@ function openEdit(row: AdminArtifactItem) {
   form.category = row.category || ''
   form.location = row.location || ''
   form.intro = row.intro || ''
-  form.imageList = row.images && row.images.length > 0 ? [...row.images] : ['']
+  form.images = row.images ? [...row.images] : []
   form.wikiRef = row.wikiRef || ''
   form.status = row.status
   dialogVisible.value = true
@@ -201,7 +185,7 @@ async function handleSubmit() {
         category: form.category || undefined,
         location: form.location || undefined,
         intro: form.intro,
-        images: validImages.value.length > 0 ? validImages.value : undefined,
+        images: form.images.length > 0 ? form.images : undefined,
         wikiRef: form.wikiRef || undefined,
         status: form.status,
       }
@@ -255,6 +239,11 @@ function firstImage(row: AdminArtifactItem) {
   return row.images && row.images.length > 0 ? row.images[0] : ''
 }
 
+/** 表格预览大图列表：相对路径需解析为完整地址 */
+function previewImages(row: AdminArtifactItem) {
+  return (row.images || []).map(resolveFileUrl)
+}
+
 // ===== 初始化 =====
 onMounted(() => {
   loadScenicOptions()
@@ -292,12 +281,7 @@ onMounted(() => {
           filterable
           style="width: 170px"
         >
-          <el-option
-            v-for="s in scenicOptions"
-            :key="s.id"
-            :label="s.name"
-            :value="s.id"
-          />
+          <el-option v-for="s in scenicOptions" :key="s.id" :label="s.name" :value="s.id" />
         </el-select>
         <RedButton type="primary" size="small" @click="handleSearch">搜索</RedButton>
       </div>
@@ -312,10 +296,10 @@ onMounted(() => {
         <template #default="{ row }">
           <el-image
             v-if="firstImage(row)"
-            :src="firstImage(row)"
+            :src="resolveFileUrl(firstImage(row))"
             fit="cover"
             class="artifact-page__thumb"
-            :preview-src-list="row.images"
+            :preview-src-list="previewImages(row)"
             preview-teleported
           />
           <span v-else class="artifact-page__no-img">无图</span>
@@ -396,12 +380,7 @@ onMounted(() => {
             :disabled="isReadOnly"
             style="width: 100%"
           >
-            <el-option
-              v-for="s in scenicOptions"
-              :key="s.id"
-              :label="s.name"
-              :value="s.id"
-            />
+            <el-option v-for="s in scenicOptions" :key="s.id" :label="s.name" :value="s.id" />
           </el-select>
         </el-form-item>
         <el-form-item label="年代" prop="era">
@@ -414,44 +393,16 @@ onMounted(() => {
           <el-input v-model="form.location" placeholder="选填，出土/收藏地点" />
         </el-form-item>
         <el-form-item label="文物简介" prop="intro">
-          <el-input
-            v-model="form.intro"
-            type="textarea"
-            :rows="3"
-            placeholder="必填"
-          />
+          <el-input v-model="form.intro" type="textarea" :rows="3" placeholder="必填" />
         </el-form-item>
         <el-form-item label="图片">
-          <div class="artifact-page__image-editor">
-            <div
-              v-for="(url, index) in form.imageList"
-              :key="index"
-              class="artifact-page__image-row"
-            >
-              <el-input v-model="form.imageList[index]" placeholder="图片 URL" />
-              <el-button
-                link
-                type="danger"
-                :disabled="form.imageList.length === 1 && !url"
-                @click="removeImageRow(index)"
-              >
-                删除
-              </el-button>
-            </div>
-            <el-button link type="primary" @click="addImageRow">+ 添加图片（最多 9 张）</el-button>
-            <div v-if="validImages.length > 0" class="artifact-page__image-previews">
-              <el-image
-                v-for="(img, i) in validImages"
-                :key="i"
-                :src="img"
-                fit="cover"
-                class="artifact-page__preview"
-                :preview-src-list="validImages"
-                :initial-index="i"
-                preview-teleported
-              />
-            </div>
-          </div>
+          <UploadFile
+            v-model="form.images"
+            type="image"
+            multiple
+            :max-count="9"
+            :scenic-area-id="form.scenicAreaId"
+          />
         </el-form-item>
         <el-form-item label="Wiki条目">
           <el-input v-model="form.wikiRef" placeholder="选填，关联 Wiki 条目路径" />
@@ -512,32 +463,6 @@ onMounted(() => {
     background: @color-bg-page;
     color: @color-text-secondary;
     font-size: @font-size-sm;
-  }
-
-  &__image-editor {
-    width: 100%;
-  }
-
-  &__image-row {
-    display: flex;
-    align-items: center;
-    gap: @spacing-sm;
-    margin-bottom: @spacing-xs;
-  }
-
-  &__image-previews {
-    display: flex;
-    flex-wrap: wrap;
-    gap: @spacing-xs;
-    margin-top: @spacing-sm;
-  }
-
-  &__preview {
-    width: 64px;
-    height: 64px;
-    border-radius: 4px;
-    border: 1px solid @color-border;
-    cursor: pointer;
   }
 
   &__pagination {

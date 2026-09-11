@@ -11,6 +11,7 @@ import {
   type AdminScenicPayload,
 } from '@/api/admin'
 import { useUserStore } from '@/store'
+import UploadFile from '@/components/UploadFile.vue'
 import type { ScenicAreaInfo } from '@red-tour-project/common'
 
 const userStore = useUserStore()
@@ -305,8 +306,13 @@ onMounted(loadList)
         <el-form-item label="开放时间" prop="openHours">
           <el-input v-model="form.openHours" placeholder="如 08:30-17:00" />
         </el-form-item>
-        <el-form-item label="封面图URL">
-          <el-input v-model="form.coverImage" placeholder="选填，图片 URL" />
+        <el-form-item label="封面图">
+          <!-- 编辑时景区已存在，携带景区 ID 作为存储路径；新增时暂无 ID 不传 -->
+          <UploadFile
+            v-model="form.coverImage"
+            type="image"
+            :scenic-area-id="dialogMode === 'edit' ? form.id : undefined"
+          />
         </el-form-item>
         <el-form-item label="状态">
           <el-switch
