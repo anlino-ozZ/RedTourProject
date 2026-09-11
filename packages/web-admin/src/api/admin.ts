@@ -307,3 +307,59 @@ export function getAdminProductOrder(id: number) {
 export function updateAdminProductOrderStatus(id: number, status: ProductOrderStatus) {
   return request.put(`/admin/product-orders/${id}/status`, { status }) as Promise<null>
 }
+
+// ===== 管理端文物管理接口（接口文档 14.7 节，表 artifact）=====
+
+/** 管理端文物列表项 */
+export interface AdminArtifactItem {
+  id: number
+  scenicAreaId: number
+  name: string
+  era?: string // 年代，如 1935年
+  intro: string
+  images?: string[] // 图片 URL 数组
+  location?: string // 出土/收藏地点
+  category?: string // 品类，如 武器 / 文献
+  wikiRef?: string // 关联 Wiki 条目路径
+  status: number // 0 下架 / 1 上架
+}
+
+/** 文物列表查询参数 */
+export interface AdminArtifactQuery extends PageQuery {
+  keyword?: string
+  scenicAreaId?: number
+  category?: string
+}
+
+/** 新增/编辑文物请求体 */
+export interface AdminArtifactPayload {
+  name: string
+  scenicAreaId: number
+  era?: string
+  intro: string
+  images?: string[]
+  location?: string
+  category?: string
+  wikiRef?: string
+  status?: number
+}
+
+/** 文物列表（分页） */
+export function getAdminArtifacts(params: AdminArtifactQuery) {
+  return request.get('/admin/artifacts', { params }) as Promise<PageResult<AdminArtifactItem>>
+}
+
+/** 新增文物 */
+export function createAdminArtifact(data: AdminArtifactPayload) {
+  return request.post('/admin/artifacts', data) as Promise<AdminArtifactItem>
+}
+
+/** 编辑文物 */
+export function updateAdminArtifact(id: number, data: AdminArtifactPayload) {
+  return request.put(`/admin/artifacts/${id}`, data) as Promise<AdminArtifactItem>
+}
+
+/** 删除文物 */
+export function deleteAdminArtifact(id: number) {
+  return request.delete(`/admin/artifacts/${id}`) as Promise<null>
+}

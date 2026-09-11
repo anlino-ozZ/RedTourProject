@@ -71,6 +71,12 @@ const routes: RouteRecordRaw[] = [
         component: () => import('@/views/Order.vue'),
         meta: { title: '意向订单管理' },
       },
+      {
+        path: 'artifact',
+        name: 'artifact',
+        component: () => import('@/views/Artifact.vue'),
+        meta: { title: '文物管理' },
+      },
       // 统计等模块路由由后续 W-A-xx 任务在此追加
     ],
   },
