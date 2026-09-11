@@ -19,7 +19,9 @@
     "paths": {
       "@/*": ["src/*"],
       "@common/*": ["../../public-common/*"],
-      "@red-tour-project/common": ["../../public-common/index.ts"]
+      "@red-tour-project/common": ["../../public-common/index.ts"],
+      "vue": ["./node_modules/vue"],
+      "vue-router": ["./node_modules/vue-router"]
     }
   },
   "include": ["src/**/*.ts", "src/**/*.d.ts", "src/**/*.tsx", "src/**/*.vue", "../../public-common/**/*.ts", "../../public-common/**/*.vue"],
