@@ -65,6 +65,12 @@ const routes: RouteRecordRaw[] = [
         component: () => import('@/views/Product.vue'),
         meta: { title: '特产文创管理' },
       },
+      {
+        path: 'order',
+        name: 'product-order',
+        component: () => import('@/views/Order.vue'),
+        meta: { title: '意向订单管理' },
+      },
       // 统计等模块路由由后续 W-A-xx 任务在此追加
     ],
   },

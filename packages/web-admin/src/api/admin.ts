@@ -260,3 +260,50 @@ export function updateAdminProduct(id: number, data: AdminProductPayload) {
 export function deleteAdminProduct(id: number) {
   return request.delete(`/admin/products/${id}`) as Promise<null>
 }
+
+// ===== 管理端特产意向订单接口（接口文档 14.6 节，表 product_order）=====
+// 意向订单由游客侧产生，管理端仅支持 列表/详情/状态流转，无新增、编辑、删除
+
+/** 订单状态：pending 待处理 / contacted 已联系 / closed 已关闭 */
+export type ProductOrderStatus = 'pending' | 'contacted' | 'closed'
+
+/** 管理端订单列表项（productName/scenicArea* 由后端联表返回） */
+export interface AdminProductOrderItem {
+  id: number
+  productId: number
+  productName?: string
+  productImage?: string
+  scenicAreaId?: number
+  scenicAreaName?: string
+  userId?: number | null
+  phone: string
+  quantity: number
+  remark?: string
+  status: ProductOrderStatus
+  createdAt: string
+  updatedAt?: string
+}
+
+/** 订单列表查询参数 */
+export interface AdminProductOrderQuery extends PageQuery {
+  status?: ProductOrderStatus
+  phone?: string
+  scenicAreaId?: number
+}
+
+/** 订单列表（分页） */
+export function getAdminProductOrders(params: AdminProductOrderQuery) {
+  return request.get('/admin/product-orders', {
+    params,
+  }) as Promise<PageResult<AdminProductOrderItem>>
+}
+
+/** 订单详情 */
+export function getAdminProductOrder(id: number) {
+  return request.get(`/admin/product-orders/${id}`) as Promise<AdminProductOrderItem>
+}
+
+/** 流转订单状态（pending→contacted→closed） */
+export function updateAdminProductOrderStatus(id: number, status: ProductOrderStatus) {
+  return request.put(`/admin/product-orders/${id}/status`, { status }) as Promise<null>
+}
