@@ -156,3 +156,50 @@ export function updateAdminRoute(id: number, data: AdminRoutePayload) {
 export function deleteAdminRoute(id: number) {
   return request.delete(`/admin/routes/${id}`) as Promise<null>
 }
+
+// ===== 管理端打卡点管理接口（接口文档 14.4 节）=====
+
+/** 管理端打卡点列表项 */
+export interface AdminCheckpointItem {
+  id: number
+  spotId: number
+  spotName?: string // 后端联表返回
+  scenicAreaId?: number // 后端联表返回
+  longitude: number
+  latitude: number
+  radius: number // 打卡有效半径（米）
+}
+
+/** 打卡点列表查询参数 */
+export interface AdminCheckpointQuery extends PageQuery {
+  spotId?: number
+  scenicAreaId?: number
+}
+
+/** 新增/编辑打卡点请求体 */
+export interface AdminCheckpointPayload {
+  spotId: number
+  longitude: number
+  latitude: number
+  radius: number
+}
+
+/** 打卡点列表（分页） */
+export function getAdminCheckpoints(params: AdminCheckpointQuery) {
+  return request.get('/admin/checkpoints', { params }) as Promise<PageResult<AdminCheckpointItem>>
+}
+
+/** 新增打卡点 */
+export function createAdminCheckpoint(data: AdminCheckpointPayload) {
+  return request.post('/admin/checkpoints', data) as Promise<AdminCheckpointItem>
+}
+
+/** 编辑打卡点 */
+export function updateAdminCheckpoint(id: number, data: AdminCheckpointPayload) {
+  return request.put(`/admin/checkpoints/${id}`, data) as Promise<AdminCheckpointItem>
+}
+
+/** 删除打卡点 */
+export function deleteAdminCheckpoint(id: number) {
+  return request.delete(`/admin/checkpoints/${id}`) as Promise<null>
+}

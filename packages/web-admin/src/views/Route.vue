@@ -183,6 +183,7 @@ function openEdit(row: AdminRouteItem) {
 }
 
 // 弹窗中选择景区时重新加载景点
+// flush: 'sync' 保证 openEdit 程序化赋值时 watch 立即执行（此时弹窗尚未打开，不清空回显值）
 watch(
   () => form.scenicAreaId,
   (newId) => {
@@ -191,6 +192,7 @@ watch(
       form.spotIds = [] // 切换景区时清空已选景点
     }
   },
+  { flush: 'sync' },
 )
 
 async function handleSubmit() {
