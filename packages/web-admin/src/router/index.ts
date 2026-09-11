@@ -35,7 +35,13 @@ const routes: RouteRecordRaw[] = [
         component: () => import('@/views/Home.vue'),
         meta: { title: '首页概览' },
       },
-      // 景点/路线/用户/统计等模块路由由后续 W-A-xx 任务在此追加
+      {
+        path: 'user',
+        name: 'user',
+        component: () => import('@/views/User.vue'),
+        meta: { title: '用户管理', roles: ['super_admin'] },
+      },
+      // 景点/路线/统计等模块路由由后续 W-A-xx 任务在此追加
     ],
   },
   // 未匹配路由统一回首页（后续可替换为 404 页面）
