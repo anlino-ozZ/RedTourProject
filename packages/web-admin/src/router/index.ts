@@ -59,6 +59,12 @@ const routes: RouteRecordRaw[] = [
         component: () => import('@/views/Checkpoint.vue'),
         meta: { title: '打卡点管理' },
       },
+      {
+        path: 'product',
+        name: 'product',
+        component: () => import('@/views/Product.vue'),
+        meta: { title: '特产文创管理' },
+      },
       // 统计等模块路由由后续 W-A-xx 任务在此追加
     ],
   },

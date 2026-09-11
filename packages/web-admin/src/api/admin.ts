@@ -203,3 +203,60 @@ export function updateAdminCheckpoint(id: number, data: AdminCheckpointPayload) 
 export function deleteAdminCheckpoint(id: number) {
   return request.delete(`/admin/checkpoints/${id}`) as Promise<null>
 }
+
+// ===== 管理端特产/文创管理接口（接口文档 14.5 节，表 product）=====
+
+/** 产品分类：specialty 特产 / cultural 文创 */
+export type ProductCategory = 'specialty' | 'cultural'
+
+/** 管理端产品列表项（比 ProductInfo 多 scenicAreaId/category/status） */
+export interface AdminProductItem {
+  id: number
+  scenicAreaId: number
+  name: string
+  price: number
+  description?: string
+  image?: string
+  stock: number
+  category: ProductCategory
+  status: number // 0 下架 / 1 上架
+}
+
+/** 产品列表查询参数 */
+export interface AdminProductQuery extends PageQuery {
+  keyword?: string
+  scenicAreaId?: number
+  category?: ProductCategory
+}
+
+/** 新增/编辑产品请求体 */
+export interface AdminProductPayload {
+  name: string
+  scenicAreaId: number
+  price: number
+  description?: string
+  image?: string
+  stock: number
+  category: ProductCategory
+  status?: number
+}
+
+/** 产品列表（分页） */
+export function getAdminProducts(params: AdminProductQuery) {
+  return request.get('/admin/products', { params }) as Promise<PageResult<AdminProductItem>>
+}
+
+/** 新增产品 */
+export function createAdminProduct(data: AdminProductPayload) {
+  return request.post('/admin/products', data) as Promise<AdminProductItem>
+}
+
+/** 编辑产品 */
+export function updateAdminProduct(id: number, data: AdminProductPayload) {
+  return request.put(`/admin/products/${id}`, data) as Promise<AdminProductItem>
+}
+
+/** 删除产品 */
+export function deleteAdminProduct(id: number) {
+  return request.delete(`/admin/products/${id}`) as Promise<null>
+}
