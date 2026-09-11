@@ -27,6 +27,7 @@ const routes: RouteRecordRaw[] = [
     // 后台框架（RedNav + 侧边菜单），业务页面作为 children 追加
     path: '/',
     component: () => import('@/layouts/AdminLayout.vue'),
+    meta: { title: '管理后台' },
     children: [
       {
         path: '',
