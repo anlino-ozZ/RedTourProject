@@ -1,5 +1,5 @@
 import request from './request'
-import type { PageQuery, PageResult, UserRole } from '@red-tour-project/common'
+import type { PageQuery, PageResult, UserRole, ScenicAreaInfo } from '@red-tour-project/common'
 
 // ===== 管理端用户管理接口（前缀 /admin，接口文档 14.1 节）=====
 
@@ -50,4 +50,43 @@ export function updateAdminUser(id: number, data: AdminUserPayload) {
 /** 删除用户（软删除） */
 export function deleteAdminUser(id: number) {
   return request.delete(`/admin/users/${id}`) as Promise<null>
+}
+
+// ===== 管理端景区管理接口（接口文档 14.2 节）=====
+
+/** 景区列表查询参数 */
+export interface AdminScenicQuery extends PageQuery {
+  keyword?: string
+}
+
+/** 新增/编辑景区请求体 */
+export interface AdminScenicPayload {
+  name: string
+  intro?: string
+  longitude?: number
+  latitude?: number
+  address?: string
+  openHours?: string
+  coverImage?: string
+  status?: number
+}
+
+/** 景区列表（分页） */
+export function getAdminScenicAreas(params: AdminScenicQuery) {
+  return request.get('/admin/scenic-areas', { params }) as Promise<PageResult<ScenicAreaInfo>>
+}
+
+/** 新增景区 */
+export function createAdminScenicArea(data: AdminScenicPayload) {
+  return request.post('/admin/scenic-areas', data) as Promise<ScenicAreaInfo>
+}
+
+/** 编辑景区 */
+export function updateAdminScenicArea(id: number, data: AdminScenicPayload) {
+  return request.put(`/admin/scenic-areas/${id}`, data) as Promise<ScenicAreaInfo>
+}
+
+/** 删除景区 */
+export function deleteAdminScenicArea(id: number) {
+  return request.delete(`/admin/scenic-areas/${id}`) as Promise<null>
 }
