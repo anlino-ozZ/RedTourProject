@@ -58,6 +58,10 @@ yarn-error.log*
 *.swo
 *.iml
 
+# ===== 文档 / 报告类 PDF（不进仓库） =====
+*.pdf
+*.PDF
+
 # ===== 操作系统 =====
 Thumbs.db
 desktop.ini

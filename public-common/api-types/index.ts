@@ -238,3 +238,15 @@ export interface PoseTriggerContent {
 export interface PoseRecognizeResult extends PoseResult {
   triggerContent?: PoseTriggerContent | null
 }
+
+// ===== 知识库 Wiki =====
+export interface WikiEntry {
+  id: number
+  title: string
+  filePath?: string // .md 素材文件路径
+  tags?: string[] // 标签（快捷信息页按 tag 取条目：scenic-intro / open-hours / facility）
+  links?: string[] // [[wiki-links]] 引用的其他条目
+  compileStatus?: 'pending' | 'done' | 'failed' // LLM 编译状态
+  updatedAt?: string // ISO 时间字符串
+  content?: string // 详情接口返回：Markdown 正文（设施条目存 JSON 点位数组）
+}
