@@ -402,29 +402,33 @@ function submitOrder() {
         </dl>
       </div>
 
-      <!-- 弹窗底部按钮（表单 / 成功两种状态） -->
+      <!-- 弹窗底部按钮（表单 / 成功两种状态）。
+           RedDialog 经 Teleport 挂载到 body，:deep 无法穿透作用域，
+           故用带 scoped 类的容器控制间距（插槽内容携带本组件作用域 id） -->
       <template #footer>
-        <template v-if="!orderResult">
-          <RedButton type="ghost" size="medium" @click="closeOrder">
-            取消
-          </RedButton>
+        <div class="products-dialog-footer">
+          <template v-if="!orderResult">
+            <RedButton type="ghost" size="medium" @click="closeOrder">
+              取消
+            </RedButton>
+            <RedButton
+              type="primary"
+              size="medium"
+              :loading="submitting"
+              @click="submitOrder"
+            >
+              提交登记
+            </RedButton>
+          </template>
           <RedButton
+            v-else
             type="primary"
             size="medium"
-            :loading="submitting"
-            @click="submitOrder"
+            @click="orderVisible = false"
           >
-            提交登记
+            完成
           </RedButton>
-        </template>
-        <RedButton
-          v-else
-          type="primary"
-          size="medium"
-          @click="orderVisible = false"
-        >
-          完成
-        </RedButton>
+        </div>
       </template>
     </RedDialog>
   </div>
@@ -901,8 +905,8 @@ function submitOrder() {
   }
 }
 
-// 弹窗底部按钮间距（RedDialog footer 内）
-:deep(.rt-dialog__footer) {
+// 弹窗底部按钮容器（插槽内容，scoped 类可直接生效）
+.products-dialog-footer {
   display: flex;
   justify-content: flex-end;
   gap: @spacing-sm;
