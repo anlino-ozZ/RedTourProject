@@ -10,6 +10,13 @@ const routes: RouteRecordRaw[] = [
     meta: { title: '首页', showTabBar: true },
   },
   {
+    path: '/auth',
+    name: 'auth',
+    component: () => import('@/views/Auth.vue'),
+    // 登录/注册页不显示标题栏与底部 TabBar，采用沉浸式全屏布局
+    meta: { title: '', showTabBar: false },
+  },
+  {
     path: '/guide',
     name: 'guide',
     component: () => import('@/views/Guide.vue'),

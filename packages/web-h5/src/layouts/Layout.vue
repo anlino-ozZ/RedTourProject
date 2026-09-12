@@ -26,7 +26,10 @@ withDefaults(defineProps<Props>(), {
     </header>
 
     <!-- 内容区：可滚动 -->
-    <main class="layout__main" :class="{ 'has-tabbar': showTabBar, 'has-header': title }">
+    <main
+      class="layout__main"
+      :class="{ 'has-tabbar': showTabBar, 'has-header': title, 'is-immersive': !showTabBar && !title }"
+    >
       <slot />
     </main>
 
@@ -77,6 +80,10 @@ withDefaults(defineProps<Props>(), {
     // 有顶部 header 时补偿 fixed header 高度
     &.has-header {
       padding-top: 56px; // 48px header + 8px 间距
+    }
+    // 沉浸式全屏页面（如登录/注册）去掉内边距，由页面自行控制
+    &.is-immersive {
+      padding: 0;
     }
   }
 }
