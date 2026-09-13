@@ -29,6 +29,7 @@ const allMenuItems: AdminMenuItem[] = [
   { title: '特产文创管理', path: '/product' },
   { title: '意向订单管理', path: '/order' },
   { title: '文物管理', path: '/artifact' },
+  { title: '知识库管理', path: '/wiki' },
   { title: '成就定义管理', path: '/achievement', roles: ['super_admin'] },
   { title: '用户管理', path: '/user', roles: ['super_admin'] },
   { title: '数据统计', path: '/stats' },

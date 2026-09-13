@@ -410,3 +410,78 @@ export function updateAdminAchievement(id: number, data: AdminAchievementPayload
 export function deleteAdminAchievement(id: number) {
   return request.delete(`/admin/achievements/${id}`) as Promise<null>
 }
+
+// ===== 管理端知识库（Wiki 条目）接口（接口文档 14.5 节）=====
+// Wiki 条目为景区级素材：scenicAreaId 必传；上传素材后由后端编译为 Markdown 文件
+
+/** 编译状态：pending 待编译 / compiling 编译中 / done 已完成 / failed 失败 */
+export type WikiCompileStatus = 'pending' | 'compiling' | 'done' | 'failed'
+
+/** Wiki 条目列表项（不含正文） */
+export interface AdminWikiItem {
+  id: number
+  scenicAreaId: number
+  title: string
+  compileStatus: WikiCompileStatus
+  filePath?: string // 编译后生成的文件路径，如 wiki/scenic_1/遵义会议.md
+  tags?: string[] // 分类标签
+  links?: string[] // 引用的 Wiki 条目路径数组
+  updatedAt: string
+}
+
+/** Wiki 条目详情（含正文） */
+export interface AdminWikiDetail extends AdminWikiItem {
+  content?: string // Markdown 正文
+}
+
+/** Wiki 列表查询参数（scenicAreaId 必传） */
+export interface AdminWikiQuery extends PageQuery {
+  scenicAreaId: number
+  keyword?: string
+  compileStatus?: WikiCompileStatus
+}
+
+/** 上传素材并触发编译请求体 */
+export interface AdminWikiUploadPayload {
+  scenicAreaId: number
+  title: string
+  content: string // 素材文本内容（Markdown/纯文本）
+  tags?: string[]
+}
+
+/** 编辑条目内容请求体 */
+export interface AdminWikiEditPayload {
+  title?: string
+  content?: string
+  tags?: string[]
+}
+
+/** Wiki 列表（分页，scenicAreaId 必传） */
+export function getAdminWikiList(params: AdminWikiQuery) {
+  return request.get('/admin/wiki', { params }) as Promise<PageResult<AdminWikiItem>>
+}
+
+/** 上传素材并触发编译 */
+export function uploadAdminWiki(data: AdminWikiUploadPayload) {
+  return request.post('/admin/wiki/upload', data) as Promise<AdminWikiItem>
+}
+
+/** 条目详情（含正文） */
+export function getAdminWikiDetail(id: number) {
+  return request.get(`/admin/wiki/${id}`) as Promise<AdminWikiDetail>
+}
+
+/** 编辑条目内容 */
+export function updateAdminWiki(id: number, data: AdminWikiEditPayload) {
+  return request.put(`/admin/wiki/${id}`, data) as Promise<AdminWikiItem>
+}
+
+/** 重新编译 */
+export function compileAdminWiki(id: number) {
+  return request.post(`/admin/wiki/${id}/compile`) as Promise<AdminWikiItem>
+}
+
+/** 删除条目 */
+export function deleteAdminWiki(id: number) {
+  return request.delete(`/admin/wiki/${id}`) as Promise<null>
+}

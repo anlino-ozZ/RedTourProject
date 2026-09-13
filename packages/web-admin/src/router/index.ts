@@ -78,6 +78,12 @@ const routes: RouteRecordRaw[] = [
         meta: { title: '文物管理' },
       },
       {
+        path: 'wiki',
+        name: 'wiki',
+        component: () => import('@/views/Wiki.vue'),
+        meta: { title: '知识库管理' },
+      },
+      {
         path: 'achievement',
         name: 'achievement',
         component: () => import('@/views/Achievement.vue'),
