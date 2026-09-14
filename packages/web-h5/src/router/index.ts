@@ -23,6 +23,18 @@ const routes: RouteRecordRaw[] = [
     meta: { title: '智能导览', showTabBar: true },
   },
   {
+    path: '/guide/navigate',
+    name: 'guide-navigate',
+    component: () => import('@/views/GuideNav.vue'),
+    meta: { title: '导览进行中', showTabBar: false },
+  },
+  {
+    path: '/guide/recommend',
+    name: 'guide-recommend',
+    component: () => import('@/views/GuideRecommend.vue'),
+    meta: { title: 'AI 个性化导览', showTabBar: true },
+  },
+  {
     path: '/qa',
     name: 'qa',
     component: () => import('@/views/Qa.vue'),
@@ -32,7 +44,13 @@ const routes: RouteRecordRaw[] = [
     path: '/products',
     name: 'products',
     component: () => import('@/views/Products.vue'),
-    meta: { title: '特产中心', showTabBar: true },
+    meta: { title: '文创中心', showTabBar: true },
+  },
+  {
+    path: '/interactive',
+    name: 'interactive',
+    component: () => import('@/views/Interactive.vue'),
+    meta: { title: '互动中心', showTabBar: true },
   },
   {
     path: '/profile',
