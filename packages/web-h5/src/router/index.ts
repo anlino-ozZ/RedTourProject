@@ -29,6 +29,12 @@ const routes: RouteRecordRaw[] = [
     meta: { title: '导览进行中', showTabBar: false },
   },
   {
+    path: '/guide/recommend',
+    name: 'guide-recommend',
+    component: () => import('@/views/GuideRecommend.vue'),
+    meta: { title: 'AI 个性化导览', showTabBar: true },
+  },
+  {
     path: '/qa',
     name: 'qa',
     component: () => import('@/views/Qa.vue'),
