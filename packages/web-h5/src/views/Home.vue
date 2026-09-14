@@ -238,17 +238,19 @@ function goToMap(spotId?: number) {
       </div>
     </div>
 
-    <!-- 特产中心入口（醒目金卡） -->
+    <!-- 特产中心入口（与问答入口同款红色大按钮） -->
     <div class="home__products-entry" @click="router.push('/products')">
-      <div class="home__products-icon">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M5 8h14l-1 12H6L5 8z" />
-          <path d="M9 8V6a3 3 0 016 0v2" />
-        </svg>
-      </div>
-      <div class="home__products-text">
-        <span class="home__products-title">特产中心</span>
-        <span class="home__products-desc">红色景区文创好物 · 甄选推荐</span>
+      <div class="home__products-content">
+        <div class="home__products-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M5 8h14l-1 12H6L5 8z" />
+            <path d="M9 8V6a3 3 0 016 0v2" />
+          </svg>
+        </div>
+        <div class="home__products-text">
+          <span class="home__products-title">特产中心</span>
+          <span class="home__products-desc">红色景区文创好物 · 甄选推荐</span>
+        </div>
       </div>
       <span class="home__products-arrow">→</span>
     </div>
@@ -475,46 +477,48 @@ function goToMap(spotId?: number) {
     text-align: center;
   }
 
-  // 特产中心入口（醒目金卡）
+  // 特产中心入口（与问答入口同款红色大按钮）
   &__products-entry {
     display: flex;
     align-items: center;
     justify-content: space-between;
     padding: @spacing-xl @spacing-lg;
     margin: @spacing-sm 0 @spacing-md;
-    background: linear-gradient(135deg, #f2ce73 0%, #d9a93a 100%);
+    // 暖朱红渐变：与问答卡的冷深红（@color-primary → @color-primary-active）拉开色相差，保持同红色系
+    background: linear-gradient(135deg, #e0552b 0%, @color-primary 100%);
     border-radius: @radius-lg;
-    color: #7a1e2a;
+    color: #fff;
     cursor: pointer;
-    box-shadow: 0 8px 20px rgba(212, 175, 55, 0.35);
+    box-shadow: 0 8px 24px rgba(224, 85, 43, 0.3);
     transition: transform 0.15s, box-shadow 0.2s;
     &:active {
       transform: scale(0.98);
-      box-shadow: 0 4px 10px rgba(212, 175, 55, 0.25);
+      box-shadow: 0 4px 12px rgba(224, 85, 43, 0.25);
     }
+  }
+  &__products-content {
+    display: flex;
+    align-items: center;
+    gap: @spacing-md;
   }
   &__products-icon {
     flex-shrink: 0;
     width: 44px;
     height: 44px;
     border-radius: 50%;
-    background: @color-primary;
-    color: #fff;
+    background: rgba(255, 255, 255, 0.2);
     display: flex;
     align-items: center;
     justify-content: center;
-    box-shadow: 0 4px 10px rgba(196, 30, 58, 0.3);
     svg {
       width: 22px;
       height: 22px;
     }
   }
   &__products-text {
-    flex: 1;
     display: flex;
     flex-direction: column;
     gap: @spacing-xs;
-    padding: 0 @spacing-md;
   }
   &__products-title {
     font-size: 18px;
@@ -523,7 +527,7 @@ function goToMap(spotId?: number) {
   }
   &__products-desc {
     font-size: @font-size-sm;
-    opacity: 0.75;
+    opacity: 0.9;
   }
   &__products-arrow {
     font-size: 22px;
