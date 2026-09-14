@@ -35,6 +35,12 @@ const routes: RouteRecordRaw[] = [
     meta: { title: '文创中心', showTabBar: true },
   },
   {
+    path: '/interactive',
+    name: 'interactive',
+    component: () => import('@/views/Interactive.vue'),
+    meta: { title: '互动中心', showTabBar: true },
+  },
+  {
     path: '/profile',
     name: 'profile',
     component: () => import('@/views/Profile.vue'),

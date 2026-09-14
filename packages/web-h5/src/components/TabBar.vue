@@ -47,7 +47,7 @@ const tabs: TabItem[] = [
   },
   {
     title: '互动',
-    path: '/products',
+    path: '/interactive',
     icon:
       'M12 3a2 2 0 012 2v1h2a2 2 0 012 2v11a2 2 0 01-2 2H8a2 2 0 01-2-2V8a2 2 0 012-2h2V5a2 2 0 012-2zM9 13l2 2 4-4',
     iconActive:
