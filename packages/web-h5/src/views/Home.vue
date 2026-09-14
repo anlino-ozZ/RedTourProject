@@ -161,6 +161,87 @@ function goToMap(spotId?: number) {
     query: spotId ? { view: 'map', spotId: String(spotId) } : { view: 'map' },
   })
 }
+
+// ===== 首页功能入口四宫格（一行 4 个，见 Banner 下方） =====
+interface QuickEntry {
+  label: string
+  path: string
+  /** 图标背景色 */
+  bg: string
+  /** SVG path 描边 */
+  icon: string[]
+}
+
+const quickEntries: QuickEntry[] = [
+  {
+    label: '智能导览',
+    path: '/guide',
+    bg: '#fde8ea',
+    icon: [
+      'M12 2a8 8 0 00-8 8c0 5 8 12 8 12s8-7 8-12a8 8 0 00-8-8z',
+      'M12 11a1.5 1.5 0 100 3 1.5 1.5 0 000-3z',
+    ],
+  },
+  {
+    label: '智能问答',
+    path: '/qa',
+    bg: '#f6e8c5',
+    icon: [
+      'M21 15a2 2 0 01-2 2H8l-4 4V5a2 2 0 012-2h13a2 2 0 012 2z',
+      'M8 10h8M8 14h5',
+    ],
+  },
+  {
+    label: '红色剧本',
+    path: '/', // TODO 待剧本功能实现后替换
+    bg: '#fdf3c4',
+    icon: [
+      'M5 5h14',
+      'M5 5a2 2 0 100.01 0z',
+      'M19 5a2 2 0 100.01 0z',
+      'M7 5v12a2 2 0 002 2h6a2 2 0 002-2V5',
+      'M10 9h4M10 12h4M10 15h2',
+    ],
+  },
+  {
+    label: '文创中心',
+    path: '/products',
+    bg: '#fde0e4',
+    icon: [
+      'M5 8h14l-1 12H6L5 8z',
+      'M9 8V6a3 3 0 016 0v2',
+    ],
+  },
+]
+
+function goQuick(entry: QuickEntry) {
+  if (entry.path === '/') {
+    // 剧本研学入口暂未开发
+    return
+  }
+  router.push(entry.path)
+}
+
+// ===== 大家都在问（热门问题列表） =====
+interface HotQuestion {
+  id: number
+  text: string
+  /** 热度标签文案 */
+  heat: string
+}
+
+const hotQuestions: HotQuestion[] = [
+  {
+    id: 1,
+    text: '1921年在这里发生了哪些重大历史转折？',
+    heat: '🔥 热门',
+  },
+  {
+    id: 2,
+    text: '这件文物的材质和当时的生产背景是什么？',
+    heat: '🔥 热门',
+  },
+]
 </script>
 
 <template>
@@ -218,7 +299,31 @@ function goToMap(spotId?: number) {
       </div>
     </div>
 
-    <!-- 热门景点横向滚动：点击进入导览地图并定位到该景点 -->
+    <!-- 功能入口四宫格（一行 4 个） -->
+    <div class="home__quick">
+      <div
+        v-for="entry in quickEntries"
+        :key="entry.label"
+        class="home__quick-item"
+        @click="goQuick(entry)"
+      >
+        <span class="home__quick-icon" :style="{ background: entry.bg }">
+          <svg
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="#c41e3a"
+            stroke-width="1.8"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          >
+            <path v-for="(d, j) in entry.icon" :key="j" :d="d" />
+          </svg>
+        </span>
+        <span class="home__quick-label">{{ entry.label }}</span>
+      </div>
+    </div>
+
+    <!-- 热门景点横向滚动 -->
     <div class="home__section">
       <div class="home__section-head">
         <span class="home__section-title">热门景点</span>
@@ -238,38 +343,23 @@ function goToMap(spotId?: number) {
       </div>
     </div>
 
-    <!-- 特产中心入口（与问答入口同款红色大按钮） -->
-    <div class="home__products-entry" @click="router.push('/products')">
-      <div class="home__products-content">
-        <div class="home__products-icon">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M5 8h14l-1 12H6L5 8z" />
-            <path d="M9 8V6a3 3 0 016 0v2" />
-          </svg>
-        </div>
-        <div class="home__products-text">
-          <span class="home__products-title">特产中心</span>
-          <span class="home__products-desc">红色景区文创好物 · 甄选推荐</span>
+    <!-- 大家都在问（热门问题列表） -->
+    <div class="home__section">
+      <div class="home__section-head">
+        <span class="home__section-title">大家都在问</span>
+      </div>
+      <div class="home__qa-list">
+        <div
+          v-for="q in hotQuestions"
+          :key="q.id"
+          class="home__qa-item"
+          @click="router.push('/qa')"
+        >
+          <span class="home__qa-q">?</span>
+          <span class="home__qa-text">{{ q.text }}</span>
+          <span class="home__qa-heat">{{ q.heat }}</span>
         </div>
       </div>
-      <span class="home__products-arrow">→</span>
-    </div>
-
-    <!-- 问答入口大按钮（视觉焦点） -->
-    <div class="home__qa-entry" @click="router.push('/qa')">
-      <div class="home__qa-content">
-        <div class="home__qa-icon">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M21 15a2 2 0 01-2 2H8l-4 4V5a2 2 0 012-2h13a2 2 0 012 2z" />
-            <path d="M8 10h8M8 14h5" />
-          </svg>
-        </div>
-        <div class="home__qa-text">
-          <span class="home__qa-title">AI 智能问答</span>
-          <span class="home__qa-desc">向 AI 提问，了解党史与红色文化</span>
-        </div>
-      </div>
-      <span class="home__qa-arrow">→</span>
     </div>
   </div>
 </template>
@@ -477,117 +567,101 @@ function goToMap(spotId?: number) {
     text-align: center;
   }
 
-  // 特产中心入口（与问答入口同款红色大按钮）
-  &__products-entry {
+  // 功能入口四宫格（一行 4 个）
+  &__quick {
     display: flex;
-    align-items: center;
     justify-content: space-between;
-    padding: @spacing-xl @spacing-lg;
     margin: @spacing-sm 0 @spacing-md;
-    // 暖朱红渐变：与问答卡的冷深红（@color-primary → @color-primary-active）拉开色相差，保持同红色系
-    background: linear-gradient(135deg, #e0552b 0%, @color-primary 100%);
-    border-radius: @radius-lg;
-    color: #fff;
-    cursor: pointer;
-    box-shadow: 0 8px 24px rgba(224, 85, 43, 0.3);
-    transition: transform 0.15s, box-shadow 0.2s;
-    &:active {
-      transform: scale(0.98);
-      box-shadow: 0 4px 12px rgba(224, 85, 43, 0.25);
-    }
-  }
-  &__products-content {
-    display: flex;
-    align-items: center;
-    gap: @spacing-md;
-  }
-  &__products-icon {
-    flex-shrink: 0;
-    width: 44px;
-    height: 44px;
-    border-radius: 50%;
-    background: rgba(255, 255, 255, 0.2);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    svg {
-      width: 22px;
-      height: 22px;
-    }
-  }
-  &__products-text {
-    display: flex;
-    flex-direction: column;
-    gap: @spacing-xs;
-  }
-  &__products-title {
-    font-size: 18px;
-    font-weight: 700;
-    letter-spacing: 0.5px;
-  }
-  &__products-desc {
-    font-size: @font-size-sm;
-    opacity: 0.9;
-  }
-  &__products-arrow {
-    font-size: 22px;
-    font-weight: 700;
+    padding: 0 @spacing-xs;
   }
 
-  // 问答入口大按钮（视觉焦点）
-  &__qa-entry {
+  &__quick-item {
     display: flex;
+    flex-direction: column;
     align-items: center;
-    justify-content: space-between;
-    padding: @spacing-xl @spacing-lg;
-    margin-bottom: @spacing-md;
-    background: linear-gradient(135deg, @color-primary 0%, @color-primary-active 100%);
-    border-radius: @radius-lg;
-    color: #fff;
+    gap: @spacing-sm;
+    flex: 1;
     cursor: pointer;
-    box-shadow: 0 8px 24px rgba(196, 30, 58, 0.3);
-    transition: transform 0.15s, box-shadow 0.2s;
-    &:active {
-      transform: scale(0.98);
-      box-shadow: 0 4px 12px rgba(196, 30, 58, 0.25);
-    }
   }
-  &__qa-content {
-    display: flex;
-    align-items: center;
-    gap: @spacing-md;
-  }
-  &__qa-icon {
-    flex-shrink: 0;
-    width: 44px;
-    height: 44px;
-    border-radius: 50%;
-    background: rgba(255, 255, 255, 0.2);
+
+  &__quick-icon {
+    width: 52px;
+    height: 52px;
+    border-radius: 14px;
     display: flex;
     align-items: center;
     justify-content: center;
+    transition: transform 0.15s;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+
     svg {
-      width: 22px;
-      height: 22px;
+      width: 26px;
+      height: 26px;
+    }
+
+    &:active {
+      transform: scale(0.94);
     }
   }
-  &__qa-text {
+
+  &__quick-label {
+    font-size: @font-size-sm;
+    color: @color-text-primary;
+    font-weight: 500;
+  }
+
+  // 大家都在问
+  &__qa-list {
     display: flex;
     flex-direction: column;
-    gap: @spacing-xs;
+    gap: @spacing-sm;
   }
-  &__qa-title {
+
+  &__qa-item {
+    display: flex;
+    align-items: center;
+    gap: @spacing-md;
+    padding: @spacing-md;
+    background: @color-bg-card;
+    border-radius: @radius-lg;
+    box-shadow: @shadow-card;
+    cursor: pointer;
+    transition: transform 0.1s;
+
+    &:active {
+      transform: scale(0.99);
+    }
+  }
+
+  &__qa-q {
+    flex-shrink: 0;
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    background: @color-primary-light;
+    color: @color-primary;
     font-size: 18px;
     font-weight: 700;
-    letter-spacing: 0.5px;
+    line-height: 32px;
+    text-align: center;
   }
-  &__qa-desc {
+
+  &__qa-text {
+    flex: 1;
+    font-size: @font-size-base;
+    color: @color-text-primary;
+    line-height: 1.5;
+    // 单行省略
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+  }
+
+  &__qa-heat {
+    flex-shrink: 0;
     font-size: @font-size-sm;
-    opacity: 0.9;
-  }
-  &__qa-arrow {
-    font-size: 22px;
-    font-weight: 700;
+    color: #e0552b;
+    font-weight: 600;
   }
 }
 </style>

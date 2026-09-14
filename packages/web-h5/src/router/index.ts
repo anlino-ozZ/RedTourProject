@@ -32,7 +32,7 @@ const routes: RouteRecordRaw[] = [
     path: '/products',
     name: 'products',
     component: () => import('@/views/Products.vue'),
-    meta: { title: '特产中心', showTabBar: true },
+    meta: { title: '文创中心', showTabBar: true },
   },
   {
     path: '/profile',

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 /**
  * H5 底部导航栏
- * 五个 Tab：首页 / 导览 / 问答 / 特产 / 我的
+ * 五个 Tab：首页 / 导览 / 问答 / 互动 / 我的
  * 路由驱动高亮，点击跳转对应路由
  */
 import { useRoute, useRouter } from 'vue-router'
@@ -46,12 +46,12 @@ const tabs: TabItem[] = [
       'M21 15a2 2 0 01-2 2H8l-4 4V5a2 2 0 012-2h13a2 2 0 012 2z',
   },
   {
-    title: '特产',
+    title: '互动',
     path: '/products',
     icon:
-      'M5 8h14l-1 12H6L5 8z M9 8V6a3 3 0 016 0v2',
+      'M12 3a2 2 0 012 2v1h2a2 2 0 012 2v11a2 2 0 01-2 2H8a2 2 0 01-2-2V8a2 2 0 012-2h2V5a2 2 0 012-2zM9 13l2 2 4-4',
     iconActive:
-      'M5 8h14l-1 12H6L5 8z M9 8V6a3 3 0 016 0v2',
+      'M12 3a2 2 0 012 2v1h2a2 2 0 012 2v11a2 2 0 01-2 2H8a2 2 0 01-2-2V8a2 2 0 012-2h2V5a2 2 0 012-2zM9 13l2 2 4-4',
   },
   {
     title: '我的',
