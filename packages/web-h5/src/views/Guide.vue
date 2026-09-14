@@ -461,7 +461,7 @@ function formatVisits(n: number): string {
 @import '@common/style/variables.less';
 
 .guide {
-  padding-bottom: 160px; // 为底部固定操作栏 + TabBar 凸起按钮留空；AI 面板展开时更宽松
+  // padding-bottom 由 Layout.has-tabbar 统一处理（140px，含凸起 CTA），这里不再重复
 
   &__switch {
     display: flex;

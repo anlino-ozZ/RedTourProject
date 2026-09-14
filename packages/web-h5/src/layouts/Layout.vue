@@ -73,9 +73,9 @@ withDefaults(defineProps<Props>(), {
     // 默认无 header 无 tabbar
     padding: @spacing-md;
 
-    // 有底部 tabbar 时留出空间
+    // 有底部 tabbar 时留出足够空间（含中间凸起 CTA 按钮）
     &.has-tabbar {
-      padding-bottom: 92px; // 56px tabbar + 凸起问答按钮 18px + 间距
+      padding-bottom: 140px; // 56px tabbar + 52px 凸起 CTA + 32px 间距
     }
     // 有顶部 header 时补偿 fixed header 高度
     &.has-header {
