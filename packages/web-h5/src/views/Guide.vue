@@ -54,12 +54,14 @@ function selectRoute(id: number) {
   selectedId.value = selectedId.value === id ? null : id
 }
 
-const selectedRoute = computed(
-  () =>
-    (recommended.value.find((r) => r.id === selectedId.value) as GuideRoute & {
-      score?: number
-    }) ?? null,
-)
+const selectedRoute = computed(() => {
+  if (!selectedId.value) return null
+  return (
+    recommended.value.find((r) => r.id === selectedId.value) ??
+    routes.find((r) => r.id === selectedId.value) ??
+    null
+  )
+})
 
 /** AI 加权评分后的推荐路线 */
 const recommended = ref<(GuideRoute & { score: number; highlight: string })[]>([])
@@ -80,12 +82,13 @@ async function generate() {
 const aiGenerating = ref(false)
 const aiReady = ref(false)
 
-/** 选定路线后进入导览进行中页 */
+/** 选定路线后进入导览进行中页（兼容 AI 推荐 / 地图 / 列表三种来源） */
 function startGuide() {
-  if (!selectedRoute.value) return
+  const id = selectedId.value
+  if (!id) return
   router.push({
     path: '/guide/navigate',
-    query: { routeId: String(selectedRoute.value.id) },
+    query: { routeId: String(id) },
   })
 }
 
@@ -201,9 +204,8 @@ function formatVisits(n: number): string {
           :key="item.id"
           class="guide__spot-route"
           :class="{ 'is-selected': selectedId === item.id }"
-          @click="selectRoute(item.id)"
         >
-          <div class="guide__spot-route-main">
+          <div class="guide__spot-route-main" @click="selectRoute(item.id)">
             <div class="guide__spot-route-head">
               <h4 class="guide__spot-route-name">{{ item.name }}</h4>
               <span v-if="item.id === hottestRouteId" class="guide__spot-route-hot">🔥 热门</span>
@@ -215,6 +217,13 @@ function formatVisits(n: number): string {
             </div>
             <p class="guide__spot-route-visits">{{ formatVisits(item.visitCount) }}</p>
           </div>
+          <!-- 直接开始导览按钮，不必先选中再点底部 -->
+          <button
+            class="guide__spot-route-go"
+            @click.stop="selectedId = item.id; startGuide()"
+          >
+            开始导览
+          </button>
           <span v-if="selectedId === item.id" class="guide__spot-route-check">✓</span>
         </div>
 
@@ -252,10 +261,9 @@ function formatVisits(n: number): string {
         :key="item.id"
         class="guide__card"
         :class="{ 'is-selected': selectedId === item.id }"
-        @click="selectRoute(item.id)"
       >
         <span v-if="selectedId === item.id" class="guide__card-check">✓</span>
-        <div class="guide__card-main">
+        <div class="guide__card-main" @click="selectRoute(item.id)">
           <div class="guide__card-head">
             <h3 class="guide__card-name">{{ item.name }}</h3>
             <span class="guide__card-tag">{{ item.tag }}</span>
@@ -271,6 +279,13 @@ function formatVisits(n: number): string {
           <!-- 基于定位的访问热度 -->
           <p class="guide__card-visits">🔥 {{ formatVisits(item.visitCount) }}</p>
         </div>
+        <!-- 直接开始导览按钮 -->
+        <button
+          class="guide__card-go"
+          @click.stop="selectedId = item.id; startGuide()"
+        >
+          开始导览
+        </button>
       </div>
     </template>
 
@@ -428,8 +443,8 @@ function formatVisits(n: number): string {
       </div>
     </template>
 
-    <!-- 底部操作栏（原有：地图/列表选中路线后） -->
-    <div class="guide__footer">
+    <!-- 底部操作栏（仅地图/列表视图显示；AI 展开时由面板内按钮接管） -->
+    <div v-if="!showAI" class="guide__footer">
       <RedButton
         type="primary"
         size="large"
@@ -744,6 +759,18 @@ function formatVisits(n: number): string {
     font-size: 13px;
     font-weight: bold;
   }
+  &__spot-route-go {
+    flex-shrink: 0;
+    align-self: center;
+    padding: 6px 14px;
+    border: none;
+    border-radius: @radius-base;
+    background: @color-primary;
+    color: #fff;
+    font-size: @font-size-sm;
+    font-weight: 600;
+    cursor: pointer;
+  }
   &__spot-empty {
     padding: @spacing-lg 0;
     text-align: center;
@@ -792,6 +819,8 @@ function formatVisits(n: number): string {
   &__card {
     position: relative;
     display: flex;
+    align-items: stretch;
+    gap: @spacing-md;
     background: @color-bg-card;
     border-radius: @radius-lg;
     padding: @spacing-md;
@@ -809,6 +838,19 @@ function formatVisits(n: number): string {
       border-color: @color-primary;
       box-shadow: 0 4px 14px rgba(196, 30, 58, 0.18);
     }
+  }
+  &__card-go {
+    flex-shrink: 0;
+    align-self: center;
+    height: 36px;
+    padding: 0 16px;
+    border: none;
+    border-radius: @radius-base;
+    background: @color-primary;
+    color: #fff;
+    font-size: @font-size-sm;
+    font-weight: 600;
+    cursor: pointer;
   }
 
   &__card-check {
