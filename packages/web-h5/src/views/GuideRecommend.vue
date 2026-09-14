@@ -98,7 +98,6 @@ function stars(difficulty: number): string {
     <!-- 偏好采集 -->
     <template v-if="!aiReady && !aiGenerating">
       <div class="guide-rec__head">
-        <img class="guide-rec__emoji" src="/assets/mascot.png" alt="" />
         <h2 class="guide-rec__title">AI 为您推荐专属路线</h2>
         <p class="guide-rec__sub">
           告诉 AI 您的兴趣偏好、体力等级和可用时长，为您生成 2–3 条个性化路线

@@ -213,7 +213,6 @@ function goRecommend() {
 
     <!-- ===== AI 推荐独立入口（路由跳转，不展开面板） ===== -->
     <button class="guide__ai-entry" @click="goRecommend">
-      <img class="guide__ai-entry-icon" src="/assets/mascot.png" alt="" />
       <span class="guide__ai-entry-text">AI 为我推荐专属路线</span>
       <span class="guide__ai-entry-arrow">→</span>
     </button>
