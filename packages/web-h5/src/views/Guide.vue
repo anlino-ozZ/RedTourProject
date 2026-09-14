@@ -16,13 +16,12 @@ import {
 const route = useRoute()
 const router = useRouter()
 
-// ===== Stage =====
-type Stage = 'preference' | 'generating' | 'result' | 'map' | 'list'
-const stage = ref<Stage>('preference')
-/** 视图：map / list；只有在 result 阶段用户切换后才进入，或直接点击底部 Tab 导览 */
+// ===== 默认视图 =====
 const view = ref<'map' | 'list'>(
   route.query.view === 'list' ? 'list' : 'map',
 )
+/** AI 推荐面板是否展开（叠加在地图/列表下方，不替换主视图） */
+const showAI = ref(false)
 
 // ===== 偏好采集 =====
 const INTEREST_OPTIONS: InterestTag[] = ['历史', '人物', '战役', '文物']
@@ -47,22 +46,7 @@ const canGenerate = computed(
   () => interests.value.length >= 1 && duration.value >= 30,
 )
 
-/** AI 加权评分后的推荐路线 */
-const recommended = ref<(GuideRoute & { score: number; highlight: string })[]>([])
-
-async function generate() {
-  if (!canGenerate.value) return
-  stage.value = 'generating'
-  // mock AI 生成延迟 1.2s
-  await new Promise((r) => setTimeout(r, 1200))
-  recommended.value = recommendRoutes({
-    interests: [...interests.value],
-    fitness: fitness.value,
-    duration: duration.value,
-  })
-  stage.value = 'result'
-}
-
+// ===== AI 推荐面板 =====
 /** 选中的路线（推荐结果里） */
 const selectedId = ref<number | null>(null)
 
@@ -77,6 +61,25 @@ const selectedRoute = computed(
     }) ?? null,
 )
 
+/** AI 加权评分后的推荐路线 */
+const recommended = ref<(GuideRoute & { score: number; highlight: string })[]>([])
+
+async function generate() {
+  if (!canGenerate.value) return
+  aiGenerating.value = true
+  await new Promise((r) => setTimeout(r, 1200))
+  recommended.value = recommendRoutes({
+    interests: [...interests.value],
+    fitness: fitness.value,
+    duration: duration.value,
+  })
+  aiGenerating.value = false
+  aiReady.value = true
+}
+
+const aiGenerating = ref(false)
+const aiReady = ref(false)
+
 /** 选定路线后进入导览进行中页 */
 function startGuide() {
   if (!selectedRoute.value) return
@@ -86,14 +89,16 @@ function startGuide() {
   })
 }
 
-/** 跳过 AI 推荐，直接浏览全部路线 */
-function skipToAll() {
-  stage.value = view.value
+/** 从推荐结果返回偏好采集 */
+function backToPreference() {
+  aiReady.value = false
+  selectedId.value = null
 }
 
-/** 从 result 返回偏好采集 */
-function backToPreference() {
-  stage.value = 'preference'
+/** 关闭 AI 面板 */
+function closeAI() {
+  showAI.value = false
+  aiReady.value = false
   selectedId.value = null
 }
 
@@ -131,158 +136,8 @@ function formatVisits(n: number): string {
 
 <template>
   <div class="guide">
-    <!-- ===== 阶段 1：偏好采集 ===== -->
-    <template v-if="stage === 'preference'">
-      <div class="guide__pref">
-        <div class="guide__pref-head">
-          <h2 class="guide__pref-title">🎯 AI 个性化导览</h2>
-          <p class="guide__pref-sub">告诉 AI 您的兴趣和体力，为您推荐 2-3 条专属路线</p>
-        </div>
-
-        <!-- 兴趣标签 -->
-        <div class="guide__pref-block">
-          <h3 class="guide__pref-label">您感兴趣的主题</h3>
-          <div class="guide__pref-chips">
-            <button
-              v-for="tag in INTEREST_OPTIONS"
-              :key="tag"
-              type="button"
-              class="guide__pref-chip"
-              :class="{ 'is-active': interests.includes(tag) }"
-              @click="toggleInterest(tag)"
-            >
-              {{ tag }}
-            </button>
-          </div>
-        </div>
-
-        <!-- 体力等级 -->
-        <div class="guide__pref-block">
-          <h3 class="guide__pref-label">体力等级</h3>
-          <div class="guide__pref-fitness">
-            <button
-              v-for="opt in FITNESS_OPTIONS"
-              :key="opt.key"
-              type="button"
-              class="guide__pref-fit"
-              :class="{ 'is-active': fitness === opt.key }"
-              @click="fitness = opt.key"
-            >
-              <span class="guide__pref-fit-label">{{ opt.label }}</span>
-              <span class="guide__pref-fit-desc">{{ opt.desc }}</span>
-            </button>
-          </div>
-        </div>
-
-        <!-- 可用时长 -->
-        <div class="guide__pref-block">
-          <div class="guide__pref-label-row">
-            <h3 class="guide__pref-label">可用时长</h3>
-            <span class="guide__pref-duration">{{ duration }} 分钟</span>
-          </div>
-          <input
-            type="range"
-            class="guide__pref-range"
-            min="30"
-            max="180"
-            step="15"
-            v-model.number="duration"
-          />
-          <div class="guide__pref-range-ticks">
-            <span>30 分钟</span>
-            <span>1 小时</span>
-            <span>2 小时</span>
-            <span>3 小时</span>
-          </div>
-        </div>
-      </div>
-
-      <!-- 底部按钮 -->
-      <div class="guide__footer">
-        <RedButton
-          type="primary"
-          size="large"
-          :disabled="!canGenerate"
-          @click="generate"
-        >
-          🤖 AI 为我推荐路线
-        </RedButton>
-        <button class="guide__skip" @click="skipToAll">
-          跳过，浏览全部路线 →
-        </button>
-      </div>
-    </template>
-
-    <!-- ===== 阶段 2：AI 生成中 ===== -->
-    <template v-else-if="stage === 'generating'">
-      <div class="guide__generating">
-        <div class="guide__ai-dots">
-          <span></span>
-          <span></span>
-          <span></span>
-        </div>
-        <h3 class="guide__ai-title">AI 正在为您推荐路线...</h3>
-        <p class="guide__ai-sub">分析兴趣偏好 · 匹配体力等级 · 结合景区热度</p>
-      </div>
-    </template>
-
-    <!-- ===== 阶段 3：AI 推荐结果 ===== -->
-    <template v-else-if="stage === 'result'">
-      <div class="guide__pref-head">
-        <h2 class="guide__pref-title">✨ 为您推荐 {{ recommended.length }} 条路线</h2>
-        <p class="guide__pref-sub">
-          匹配您的{{ FITNESS_OPTIONS.find((f) => f.key === fitness)?.label }}偏好 · 约 {{ duration }} 分钟 ·
-          兴趣：{{ interests.join(' / ') }}
-        </p>
-        <button class="guide__pref-edit" @click="backToPreference">重选偏好</button>
-      </div>
-
-      <!-- 推荐路线卡片 -->
-      <div
-        v-for="r in recommended"
-        :key="r.id"
-        class="guide__rec-card"
-        :class="{ 'is-selected': selectedId === r.id }"
-        @click="selectRoute(r.id)"
-      >
-        <span v-if="selectedId === r.id" class="guide__rec-check">✓</span>
-        <div class="guide__rec-score">
-          <span class="guide__rec-score-num">{{ r.score }}</span>
-          <span class="guide__rec-score-label">匹配分</span>
-        </div>
-        <div class="guide__rec-info">
-          <h3 class="guide__rec-name">{{ r.name }}</h3>
-          <p class="guide__rec-highlight">{{ r.highlight }}</p>
-          <div class="guide__rec-meta">
-            <span>{{ stars(r.difficulty) }}</span>
-            <span>约 {{ r.duration }} 分钟</span>
-            <span>{{ r.spotCount }} 个景点</span>
-          </div>
-          <p class="guide__rec-desc">{{ r.desc }}</p>
-        </div>
-      </div>
-
-      <!-- 也可以浏览全部路线 -->
-      <button class="guide__skip guide__skip--center" @click="skipToAll">
-        也可浏览全部路线 →
-      </button>
-
-      <!-- 底部按钮 -->
-      <div class="guide__footer">
-        <RedButton
-          type="primary"
-          size="large"
-          :disabled="!selectedId"
-          @click="startGuide"
-        >
-          {{ selectedRoute ? `开始导览：${selectedRoute.name}` : '请选择一条路线' }}
-        </RedButton>
-      </div>
-    </template>
-
-    <!-- ===== 阶段 4/5：地图 / 路线列表（原有 H-04 功能） ===== -->
-    <template v-if="stage === 'map' || stage === 'list'">
-      <div class="guide__switch">
+    <!-- ===== 默认视图：地图 / 路线列表 ===== -->
+    <div class="guide__switch">
       <button
         class="guide__switch-item"
         :class="{ 'is-active': view === 'map' }"
@@ -419,18 +274,171 @@ function formatVisits(n: number): string {
       </div>
     </template>
 
-      <!-- 底部操作栏（位于 TabBar 凸起按钮上方） -->
-      <div class="guide__footer">
-        <RedButton
-          type="primary"
-          size="large"
-          :disabled="!selectedRoute"
-          @click="startGuide"
-        >
-          {{ selectedRoute ? '开始导览' : '请先选择路线' }}
-        </RedButton>
+    <!-- ===== AI 个性化导览面板（可展开，位于地图/列表下方） ===== -->
+    <!-- 折叠状态下的入口按钮 -->
+    <button
+      v-if="!showAI"
+      class="guide__ai-entry"
+      @click="showAI = true"
+    >
+      <span class="guide__ai-entry-icon">🤖</span>
+      <span class="guide__ai-entry-text">AI 为我推荐专属路线</span>
+      <span class="guide__ai-entry-arrow">↓</span>
+    </button>
+
+    <!-- 展开：偏好采集 + AI 生成 + 推荐结果 -->
+    <template v-if="showAI">
+      <div class="guide__ai-panel">
+        <div class="guide__ai-panel-head">
+          <h2 class="guide__pref-title">🎯 AI 个性化导览</h2>
+          <button class="guide__ai-close" @click="closeAI">×</button>
+        </div>
+        <p v-if="!aiReady" class="guide__pref-sub">
+          告诉 AI 您的兴趣和体力，为您推荐 2-3 条专属路线
+        </p>
+
+        <!-- 偏好采集（未生成时显示） -->
+        <template v-if="!aiReady">
+          <div class="guide__pref-block">
+            <h3 class="guide__pref-label">您感兴趣的主题</h3>
+            <div class="guide__pref-chips">
+              <button
+                v-for="tag in INTEREST_OPTIONS"
+                :key="tag"
+                type="button"
+                class="guide__pref-chip"
+                :class="{ 'is-active': interests.includes(tag) }"
+                @click="toggleInterest(tag)"
+              >
+                {{ tag }}
+              </button>
+            </div>
+          </div>
+
+          <div class="guide__pref-block">
+            <h3 class="guide__pref-label">体力等级</h3>
+            <div class="guide__pref-fitness">
+              <button
+                v-for="opt in FITNESS_OPTIONS"
+                :key="opt.key"
+                type="button"
+                class="guide__pref-fit"
+                :class="{ 'is-active': fitness === opt.key }"
+                @click="fitness = opt.key"
+              >
+                <span class="guide__pref-fit-label">{{ opt.label }}</span>
+                <span class="guide__pref-fit-desc">{{ opt.desc }}</span>
+              </button>
+            </div>
+          </div>
+
+          <div class="guide__pref-block">
+            <div class="guide__pref-label-row">
+              <h3 class="guide__pref-label">可用时长</h3>
+              <span class="guide__pref-duration">{{ duration }} 分钟</span>
+            </div>
+            <input
+              type="range"
+              class="guide__pref-range"
+              min="30"
+              max="180"
+              step="15"
+              v-model.number="duration"
+            />
+            <div class="guide__pref-range-ticks">
+              <span>30 分</span>
+              <span>1 小时</span>
+              <span>2 小时</span>
+              <span>3 小时</span>
+            </div>
+          </div>
+
+          <RedButton
+            type="primary"
+            size="large"
+            block
+            :disabled="!canGenerate || aiGenerating"
+            @click="generate"
+          >
+            {{ aiGenerating ? '🤖 AI 正在分析...' : '🤖 AI 为我推荐路线' }}
+          </RedButton>
+        </template>
+
+        <!-- AI 生成中 -->
+        <template v-if="aiGenerating">
+          <div class="guide__generating">
+            <div class="guide__ai-dots">
+              <span></span>
+              <span></span>
+              <span></span>
+            </div>
+            <h3 class="guide__ai-title">AI 正在为您推荐路线...</h3>
+            <p class="guide__ai-sub">分析兴趣偏好 · 匹配体力等级 · 结合景区热度</p>
+          </div>
+        </template>
+
+        <!-- AI 推荐结果 -->
+        <template v-if="aiReady">
+          <div class="guide__pref-head">
+            <h2 class="guide__pref-title">✨ 为您推荐 {{ recommended.length }} 条路线</h2>
+            <p class="guide__pref-sub">
+              {{ FITNESS_OPTIONS.find((f) => f.key === fitness)?.label }} ·
+              约 {{ duration }} 分钟 · 兴趣：{{ interests.join(' / ') }}
+            </p>
+            <button class="guide__pref-edit" @click="backToPreference">重选偏好</button>
+          </div>
+
+          <div
+            v-for="r in recommended"
+            :key="r.id"
+            class="guide__rec-card"
+            :class="{ 'is-selected': selectedId === r.id }"
+            @click="selectRoute(r.id)"
+          >
+            <span v-if="selectedId === r.id" class="guide__rec-check">✓</span>
+            <div class="guide__rec-score">
+              <span class="guide__rec-score-num">{{ r.score }}</span>
+              <span class="guide__rec-score-label">匹配分</span>
+            </div>
+            <div class="guide__rec-info">
+              <h3 class="guide__rec-name">{{ r.name }}</h3>
+              <p class="guide__rec-highlight">{{ r.highlight }}</p>
+              <div class="guide__rec-meta">
+                <span>{{ stars(r.difficulty) }}</span>
+                <span>约 {{ r.duration }} 分钟</span>
+                <span>{{ r.spotCount }} 个景点</span>
+              </div>
+              <p class="guide__rec-desc">{{ r.desc }}</p>
+            </div>
+          </div>
+
+          <!-- AI 推荐路线的"开始导览"按钮 -->
+          <div class="guide__ai-panel-actions">
+            <RedButton
+              type="primary"
+              size="large"
+              block
+              :disabled="!selectedId"
+              @click="startGuide"
+            >
+              {{ selectedRoute ? `开始导览：${selectedRoute.name}` : '请选择一条推荐路线' }}
+            </RedButton>
+          </div>
+        </template>
       </div>
     </template>
+
+    <!-- 底部操作栏（原有：地图/列表选中路线后） -->
+    <div class="guide__footer">
+      <RedButton
+        type="primary"
+        size="large"
+        :disabled="!selectedRoute"
+        @click="startGuide"
+      >
+        {{ selectedRoute ? '开始导览' : '请先选择路线' }}
+      </RedButton>
+    </div>
   </div>
 </template>
 
@@ -1154,6 +1162,66 @@ function formatVisits(n: number): string {
     &--center {
       margin-bottom: @spacing-sm;
     }
+  }
+
+  // ===== AI 入口（折叠态） =====
+  &__ai-entry {
+    display: flex;
+    align-items: center;
+    gap: @spacing-sm;
+    width: 100%;
+    padding: @spacing-md;
+    margin-bottom: @spacing-md;
+    border: 1.5px dashed @color-primary;
+    border-radius: @radius-lg;
+    background: fade(@color-primary, 4%);
+    cursor: pointer;
+    transition: background 0.2s;
+
+    &:active { background: fade(@color-primary, 10%); }
+  }
+  &__ai-entry-icon { font-size: 22px; }
+  &__ai-entry-text {
+    flex: 1;
+    font-size: @font-size-base;
+    font-weight: 600;
+    color: @color-primary;
+    text-align: left;
+  }
+  &__ai-entry-arrow {
+    font-size: 16px;
+    color: @color-primary;
+    transform: translateY(-2px);
+  }
+
+  // ===== AI 面板（展开态） =====
+  &__ai-panel {
+    margin-bottom: @spacing-md;
+    padding: @spacing-md;
+    border-radius: @radius-lg;
+    background: @color-bg-card;
+    box-shadow: @shadow-card;
+  }
+  &__ai-panel-head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    margin-bottom: @spacing-sm;
+  }
+  &__ai-close {
+    width: 28px;
+    height: 28px;
+    border: none;
+    border-radius: 50%;
+    background: @color-border;
+    color: @color-text-secondary;
+    font-size: 18px;
+    cursor: pointer;
+    line-height: 26px;
+    text-align: center;
+  }
+  &__ai-panel-actions {
+    margin-top: @spacing-lg;
   }
 
   // 底部固定操作栏
