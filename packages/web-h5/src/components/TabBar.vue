@@ -1,7 +1,7 @@
 <script setup lang="ts">
 /**
  * H5 底部导航栏
- * 四个 Tab：首页 / 导览 / 问答 / 我的
+ * 五个 Tab：首页 / 导览 / 问答 / 特产 / 我的
  * 路由驱动高亮，点击跳转对应路由
  */
 import { useRoute, useRouter } from 'vue-router'
@@ -14,6 +14,8 @@ interface TabItem {
   iconActive: string
   // 默认图标
   icon: string
+  // 是否为中间凸起 CTA（AI 问答）
+  highlight?: boolean
 }
 
 // SVG 图标用 path 描边形式，激活态填充主色
@@ -37,10 +39,19 @@ const tabs: TabItem[] = [
   {
     title: '问答',
     path: '/qa',
+    highlight: true,
     icon:
       'M21 15a2 2 0 01-2 2H8l-4 4V5a2 2 0 012-2h13a2 2 0 012 2z',
     iconActive:
       'M21 15a2 2 0 01-2 2H8l-4 4V5a2 2 0 012-2h13a2 2 0 012 2z',
+  },
+  {
+    title: '特产',
+    path: '/products',
+    icon:
+      'M5 8h14l-1 12H6L5 8z M9 8V6a3 3 0 016 0v2',
+    iconActive:
+      'M5 8h14l-1 12H6L5 8z M9 8V6a3 3 0 016 0v2',
   },
   {
     title: '我的',
@@ -83,36 +94,58 @@ function onTab(item: TabItem) {
       v-for="item in tabs"
       :key="item.path"
       class="tab-bar__item"
-      :class="{ 'is-active': activePath === item.path }"
+      :class="[
+        { 'is-active': activePath === item.path },
+        { 'tab-bar__item--cta': item.highlight },
+      ]"
       @click="onTab(item)"
     >
-      <!-- 默认态：描边图标 -->
-      <svg
-        v-if="activePath !== item.path"
-        class="tab-bar__icon"
-        viewBox="0 0 24 24"
-        fill="none"
-        stroke="currentColor"
-        stroke-width="2"
-        stroke-linecap="round"
-        stroke-linejoin="round"
-      >
-        <path :d="item.icon" />
-      </svg>
-      <!-- 激活态：填充图标 -->
-      <svg
-        v-else
-        class="tab-bar__icon"
-        viewBox="0 0 24 24"
-        fill="currentColor"
-        stroke="currentColor"
-        stroke-width="1.5"
-        stroke-linecap="round"
-        stroke-linejoin="round"
-      >
-        <path :d="item.iconActive" />
-      </svg>
-      <span class="tab-bar__label">{{ item.title }}</span>
+      <!-- 中间凸起 CTA：红色圆形按钮，常驻高亮 -->
+      <template v-if="item.highlight">
+        <span class="tab-bar__cta-btn" :class="{ 'is-active': activePath === item.path }">
+          <svg
+            class="tab-bar__cta-icon"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          >
+            <path :d="item.icon" />
+          </svg>
+        </span>
+        <span class="tab-bar__cta-label">{{ item.title }}</span>
+      </template>
+      <!-- 普通 Tab：默认态描边图标 -->
+      <template v-else>
+        <svg
+          v-if="activePath !== item.path"
+          class="tab-bar__icon"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+        >
+          <path :d="item.icon" />
+        </svg>
+        <!-- 激活态：填充图标 -->
+        <svg
+          v-else
+          class="tab-bar__icon"
+          viewBox="0 0 24 24"
+          fill="currentColor"
+          stroke="currentColor"
+          stroke-width="1.5"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+        >
+          <path :d="item.iconActive" />
+        </svg>
+        <span class="tab-bar__label">{{ item.title }}</span>
+      </template>
     </div>
   </nav>
 </template>
@@ -160,6 +193,61 @@ function onTab(item: TabItem) {
   &__label {
     font-size: @font-size-sm;
     line-height: 1;
+  }
+
+  // 中间凸起 CTA（AI 问答）
+  &__item--cta {
+    position: relative;
+
+    &:active {
+      background: transparent;
+    }
+  }
+
+  &__cta-btn {
+    position: absolute;
+    top: -18px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 52px;
+    height: 52px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, @color-primary 0%, @color-primary-active 100%);
+    border: 4px solid @color-bg-card;
+    color: #fff;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 6px 16px rgba(196, 30, 58, 0.35);
+    cursor: pointer;
+    transition: transform 0.15s, box-shadow 0.2s;
+
+    &:active {
+      transform: translateX(-50%) scale(0.92);
+    }
+
+    &.is-active {
+      box-shadow:
+        0 6px 16px rgba(196, 30, 58, 0.4),
+        0 0 0 4px rgba(196, 30, 58, 0.15);
+    }
+  }
+
+  &__cta-icon {
+    width: 24px;
+    height: 24px;
+  }
+
+  &__cta-label {
+    position: absolute;
+    bottom: calc(6px + env(safe-area-inset-bottom));
+    left: 0;
+    right: 0;
+    text-align: center;
+    font-size: @font-size-sm;
+    line-height: 1;
+    color: @color-primary;
+    font-weight: 600;
   }
 }
 </style>

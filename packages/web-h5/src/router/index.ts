@@ -20,13 +20,19 @@ const routes: RouteRecordRaw[] = [
     path: '/guide',
     name: 'guide',
     component: () => import('@/views/Guide.vue'),
-    meta: { title: '导览', showTabBar: true },
+    meta: { title: '智能导览', showTabBar: true },
   },
   {
     path: '/qa',
     name: 'qa',
     component: () => import('@/views/Qa.vue'),
     meta: { title: '问答', showTabBar: true },
+  },
+  {
+    path: '/products',
+    name: 'products',
+    component: () => import('@/views/Products.vue'),
+    meta: { title: '特产中心', showTabBar: true },
   },
   {
     path: '/profile',
