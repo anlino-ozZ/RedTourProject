@@ -138,7 +138,7 @@ function formatVisits(n: number): string {
 </script>
 
 <template>
-  <div class="guide">
+  <div class="guide" :class="{ 'guide--ai-expanded': showAI }">
     <!-- ===== 默认视图：地图 / 路线列表 ===== -->
     <div class="guide__switch">
       <button
@@ -461,7 +461,10 @@ function formatVisits(n: number): string {
 @import '@common/style/variables.less';
 
 .guide {
-  // padding-bottom 由 Layout.has-tabbar 统一处理（140px，含凸起 CTA），这里不再重复
+  // 下面用 class 动态控制：AI 展开时多留空间
+  &--ai-expanded {
+    padding-bottom: 60px; // Layout 已给 92，再加 60 = 152 总空间
+  }
 
   &__switch {
     display: flex;
