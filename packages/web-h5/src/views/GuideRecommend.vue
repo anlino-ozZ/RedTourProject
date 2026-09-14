@@ -93,7 +93,10 @@ function stars(difficulty: number): string {
 <template>
   <div class="guide-rec">
     <!-- 返回按钮（Layout 已有顶部标题栏"智能导览"，此处补一个子页返回） -->
-    <div class="guide-rec__back" @click="router.back()">← 返回导览</div>
+    <button class="guide-rec__back" @click="router.back()">
+      <span class="guide-rec__back-arrow">←</span>
+      <span>返回导览</span>
+    </button>
 
     <!-- 偏好采集 -->
     <template v-if="!aiReady && !aiGenerating">
@@ -239,15 +242,24 @@ function stars(difficulty: number): string {
   padding-bottom: calc(56px + 92px); // header + tabbar 总量
 
   &__back {
-    display: inline-block;
-    margin-bottom: @spacing-md;
-    padding: 6px 10px;
-    color: @color-text-secondary;
-    font-size: @font-size-sm;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    margin-bottom: @spacing-lg;
+    padding: 8px 16px;
+    border: 1.5px solid @color-primary;
+    border-radius: 20px;
+    background: @color-primary-light;
+    color: @color-primary;
+    font-size: @font-size-base;
+    font-weight: 600;
     cursor: pointer;
-    border-radius: @radius-base;
 
-    &:active { background: @color-border; }
+    &:active { background: @color-primary; color: #fff; }
+  }
+  &__back-arrow {
+    font-size: 16px;
+    line-height: 1;
   }
 
   &__head,

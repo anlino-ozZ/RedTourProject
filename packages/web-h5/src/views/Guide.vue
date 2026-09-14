@@ -235,6 +235,8 @@ function goRecommend() {
 @import '@common/style/variables.less';
 
 .guide {
+  // Layout 给了 92px（tabbar+凸起），这里再加 60px 让内容区底部超过固定 footer
+  padding-bottom: 60px;
   &__switch {
     display: flex;
     background: @color-border;
