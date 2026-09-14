@@ -461,7 +461,7 @@ function formatVisits(n: number): string {
 @import '@common/style/variables.less';
 
 .guide {
-  padding-bottom: 132px; // 为底部固定操作栏 + TabBar 凸起按钮留空
+  padding-bottom: 160px; // 为底部固定操作栏 + TabBar 凸起按钮留空；AI 面板展开时更宽松
 
   &__switch {
     display: flex;
@@ -1239,7 +1239,7 @@ function formatVisits(n: number): string {
   // ===== AI 面板（展开态） =====
   &__ai-panel {
     margin-bottom: @spacing-md;
-    padding: @spacing-md;
+    padding: @spacing-md @spacing-md calc(@spacing-md + 8px);
     border-radius: @radius-lg;
     background: @color-bg-card;
     box-shadow: @shadow-card;
@@ -1263,7 +1263,7 @@ function formatVisits(n: number): string {
     text-align: center;
   }
   &__ai-panel-actions {
-    margin-top: @spacing-lg;
+    margin: @spacing-lg 0 @spacing-sm;
   }
 
   // 底部固定操作栏
