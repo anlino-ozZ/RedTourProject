@@ -1,25 +1,114 @@
 <script setup lang="ts">
-// 智能导览（H-04，静态页面，数据为 mock，后续 H-07 接接口）
-// 默认地图视图：景点定位 + 该景点包含的路线；列表视图：按定位/推荐排序并展示访问热度
+// 智能导览（H-06 个性化推荐 + H-04 路线浏览）
+// Stage 状态机：preference 偏好采集 → generating AI 生成中 → result 推荐结果 → navigating 导航中
 import { computed, ref } from 'vue'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { RedButton } from '@red-tour-project/common'
-import { routes, spots } from '@/mock/guide'
+import {
+  recommendRoutes,
+  routes,
+  spots,
+  type FitnessLevel,
+  type GuideRoute,
+  type InterestTag,
+} from '@/mock/guide'
 
 const route = useRoute()
+const router = useRouter()
 
-/** 视图：map 地图（默认） / list 列表；首页跳入时通过 query.view 指定 */
-const view = ref<'map' | 'list'>(route.query.view === 'list' ? 'list' : 'map')
-/** 排序方式：recommend 推荐优先 / distance 距离优先 */
-const sortType = ref<'recommend' | 'distance'>('recommend')
-/** 当前选中路线 ID */
+// ===== Stage =====
+type Stage = 'preference' | 'generating' | 'result' | 'map' | 'list'
+const stage = ref<Stage>('preference')
+/** 视图：map / list；只有在 result 阶段用户切换后才进入，或直接点击底部 Tab 导览 */
+const view = ref<'map' | 'list'>(
+  route.query.view === 'list' ? 'list' : 'map',
+)
+
+// ===== 偏好采集 =====
+const INTEREST_OPTIONS: InterestTag[] = ['历史', '人物', '战役', '文物']
+const FITNESS_OPTIONS: { key: FitnessLevel; label: string; desc: string }[] = [
+  { key: 'easy', label: '轻松', desc: '约 1 小时 · 步行少' },
+  { key: 'standard', label: '标准', desc: '约 1.5 小时 · 适度步行' },
+  { key: 'deep', label: '深度', desc: '约 2 小时以上 · 徒步' },
+]
+
+const interests = ref<InterestTag[]>(['历史', '人物'])
+const fitness = ref<FitnessLevel>('standard')
+/** 可用时长（分钟） */
+const duration = ref<number>(90)
+
+function toggleInterest(tag: InterestTag) {
+  const i = interests.value.indexOf(tag)
+  if (i >= 0) interests.value.splice(i, 1)
+  else interests.value.push(tag)
+}
+
+const canGenerate = computed(
+  () => interests.value.length >= 1 && duration.value >= 30,
+)
+
+/** AI 加权评分后的推荐路线 */
+const recommended = ref<(GuideRoute & { score: number; highlight: string })[]>([])
+
+async function generate() {
+  if (!canGenerate.value) return
+  stage.value = 'generating'
+  // mock AI 生成延迟 1.2s
+  await new Promise((r) => setTimeout(r, 1200))
+  recommended.value = recommendRoutes({
+    interests: [...interests.value],
+    fitness: fitness.value,
+    duration: duration.value,
+  })
+  stage.value = 'result'
+}
+
+/** 选中的路线（推荐结果里） */
 const selectedId = ref<number | null>(null)
-/** 地图当前定位景点 ID；首页点击热门景点时通过 query.spotId 传入 */
+
+function selectRoute(id: number) {
+  selectedId.value = selectedId.value === id ? null : id
+}
+
+const selectedRoute = computed(
+  () =>
+    (recommended.value.find((r) => r.id === selectedId.value) as GuideRoute & {
+      score?: number
+    }) ?? null,
+)
+
+/** 选定路线后进入导览进行中页 */
+function startGuide() {
+  if (!selectedRoute.value) return
+  router.push({
+    path: '/guide/navigate',
+    query: { routeId: String(selectedRoute.value.id) },
+  })
+}
+
+/** 跳过 AI 推荐，直接浏览全部路线 */
+function skipToAll() {
+  stage.value = view.value
+}
+
+/** 从 result 返回偏好采集 */
+function backToPreference() {
+  stage.value = 'preference'
+  selectedId.value = null
+}
+
+// ===== 排序（原 H-04 路线列表） =====
+const sortType = ref<'recommend' | 'distance'>('recommend')
+/** 地图定位景点（首页跳入会预设 spotId） */
 const selectedSpotId = ref<number>(
   route.query.spotId ? Number(route.query.spotId) : spots[0].id,
 )
-
-/** 排序后的路线（距离优先按距离升序；推荐优先把"推荐"路线置顶） */
+const selectedSpot = computed(
+  () => spots.find((s) => s.id === selectedSpotId.value) ?? spots[0],
+)
+const spotRoutes = computed(() =>
+  routes.filter((r) => r.spotIds.includes(selectedSpotId.value)),
+)
 const sortedRoutes = computed(() => {
   if (sortType.value === 'distance') {
     return [...routes].sort((a, b) => a.distance - b.distance)
@@ -28,52 +117,172 @@ const sortedRoutes = computed(() => {
     (a, b) => (b.tag === '推荐' ? 1 : 0) - (a.tag === '推荐' ? 1 : 0),
   )
 })
-
-const selectedRoute = computed(
-  () => routes.find((r) => r.id === selectedId.value) ?? null,
-)
-
-/** 当前定位景点 */
-const selectedSpot = computed(
-  () => spots.find((s) => s.id === selectedSpotId.value) ?? spots[0],
-)
-
-/** 当前定位景点包含的路线 */
-const spotRoutes = computed(() =>
-  routes.filter((r) => r.spotIds.includes(selectedSpotId.value)),
-)
-
-/** 访问热度最高的路线 ID（地图/列表共用"热门"标记） */
 const hottestRouteId = computed(
   () => [...routes].sort((a, b) => b.visitCount - a.visitCount)[0]?.id,
 )
-
-/** 难度星级：★ 实心 + ☆ 空心，共 3 颗 */
 function stars(difficulty: number): string {
   return '★'.repeat(difficulty) + '☆'.repeat(3 - difficulty)
 }
-
-/** 访问人数格式化：过万以"万"为单位 */
 function formatVisits(n: number): string {
   if (n >= 10000) return `${(n / 10000).toFixed(1)} 万人游览过`
   return `${n.toLocaleString()} 人游览过`
-}
-
-function selectRoute(id: number) {
-  selectedId.value = selectedId.value === id ? null : id
-}
-
-function startGuide() {
-  if (!selectedRoute.value) return
-  // TODO(H-后续): 跳转导览进行中页（路线详情 + TTS 讲解 + 打卡状态机）
-  window.alert(`即将开始导览：${selectedRoute.value.name}`)
 }
 </script>
 
 <template>
   <div class="guide">
-    <!-- 视图切换（地图视图优先） -->
-    <div class="guide__switch">
+    <!-- ===== 阶段 1：偏好采集 ===== -->
+    <template v-if="stage === 'preference'">
+      <div class="guide__pref">
+        <div class="guide__pref-head">
+          <h2 class="guide__pref-title">🎯 AI 个性化导览</h2>
+          <p class="guide__pref-sub">告诉 AI 您的兴趣和体力，为您推荐 2-3 条专属路线</p>
+        </div>
+
+        <!-- 兴趣标签 -->
+        <div class="guide__pref-block">
+          <h3 class="guide__pref-label">您感兴趣的主题</h3>
+          <div class="guide__pref-chips">
+            <button
+              v-for="tag in INTEREST_OPTIONS"
+              :key="tag"
+              type="button"
+              class="guide__pref-chip"
+              :class="{ 'is-active': interests.includes(tag) }"
+              @click="toggleInterest(tag)"
+            >
+              {{ tag }}
+            </button>
+          </div>
+        </div>
+
+        <!-- 体力等级 -->
+        <div class="guide__pref-block">
+          <h3 class="guide__pref-label">体力等级</h3>
+          <div class="guide__pref-fitness">
+            <button
+              v-for="opt in FITNESS_OPTIONS"
+              :key="opt.key"
+              type="button"
+              class="guide__pref-fit"
+              :class="{ 'is-active': fitness === opt.key }"
+              @click="fitness = opt.key"
+            >
+              <span class="guide__pref-fit-label">{{ opt.label }}</span>
+              <span class="guide__pref-fit-desc">{{ opt.desc }}</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- 可用时长 -->
+        <div class="guide__pref-block">
+          <div class="guide__pref-label-row">
+            <h3 class="guide__pref-label">可用时长</h3>
+            <span class="guide__pref-duration">{{ duration }} 分钟</span>
+          </div>
+          <input
+            type="range"
+            class="guide__pref-range"
+            min="30"
+            max="180"
+            step="15"
+            v-model.number="duration"
+          />
+          <div class="guide__pref-range-ticks">
+            <span>30 分钟</span>
+            <span>1 小时</span>
+            <span>2 小时</span>
+            <span>3 小时</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- 底部按钮 -->
+      <div class="guide__footer">
+        <RedButton
+          type="primary"
+          size="large"
+          :disabled="!canGenerate"
+          @click="generate"
+        >
+          🤖 AI 为我推荐路线
+        </RedButton>
+        <button class="guide__skip" @click="skipToAll">
+          跳过，浏览全部路线 →
+        </button>
+      </div>
+    </template>
+
+    <!-- ===== 阶段 2：AI 生成中 ===== -->
+    <template v-else-if="stage === 'generating'">
+      <div class="guide__generating">
+        <div class="guide__ai-dots">
+          <span></span>
+          <span></span>
+          <span></span>
+        </div>
+        <h3 class="guide__ai-title">AI 正在为您推荐路线...</h3>
+        <p class="guide__ai-sub">分析兴趣偏好 · 匹配体力等级 · 结合景区热度</p>
+      </div>
+    </template>
+
+    <!-- ===== 阶段 3：AI 推荐结果 ===== -->
+    <template v-else-if="stage === 'result'">
+      <div class="guide__pref-head">
+        <h2 class="guide__pref-title">✨ 为您推荐 {{ recommended.length }} 条路线</h2>
+        <p class="guide__pref-sub">
+          匹配您的{{ FITNESS_OPTIONS.find((f) => f.key === fitness)?.label }}偏好 · 约 {{ duration }} 分钟 ·
+          兴趣：{{ interests.join(' / ') }}
+        </p>
+        <button class="guide__pref-edit" @click="backToPreference">重选偏好</button>
+      </div>
+
+      <!-- 推荐路线卡片 -->
+      <div
+        v-for="r in recommended"
+        :key="r.id"
+        class="guide__rec-card"
+        :class="{ 'is-selected': selectedId === r.id }"
+        @click="selectRoute(r.id)"
+      >
+        <span v-if="selectedId === r.id" class="guide__rec-check">✓</span>
+        <div class="guide__rec-score">
+          <span class="guide__rec-score-num">{{ r.score }}</span>
+          <span class="guide__rec-score-label">匹配分</span>
+        </div>
+        <div class="guide__rec-info">
+          <h3 class="guide__rec-name">{{ r.name }}</h3>
+          <p class="guide__rec-highlight">{{ r.highlight }}</p>
+          <div class="guide__rec-meta">
+            <span>{{ stars(r.difficulty) }}</span>
+            <span>约 {{ r.duration }} 分钟</span>
+            <span>{{ r.spotCount }} 个景点</span>
+          </div>
+          <p class="guide__rec-desc">{{ r.desc }}</p>
+        </div>
+      </div>
+
+      <!-- 也可以浏览全部路线 -->
+      <button class="guide__skip guide__skip--center" @click="skipToAll">
+        也可浏览全部路线 →
+      </button>
+
+      <!-- 底部按钮 -->
+      <div class="guide__footer">
+        <RedButton
+          type="primary"
+          size="large"
+          :disabled="!selectedId"
+          @click="startGuide"
+        >
+          {{ selectedRoute ? `开始导览：${selectedRoute.name}` : '请选择一条路线' }}
+        </RedButton>
+      </div>
+    </template>
+
+    <!-- ===== 阶段 4/5：地图 / 路线列表（原有 H-04 功能） ===== -->
+    <template v-if="stage === 'map' || stage === 'list'">
+      <div class="guide__switch">
       <button
         class="guide__switch-item"
         :class="{ 'is-active': view === 'map' }"
@@ -210,17 +419,18 @@ function startGuide() {
       </div>
     </template>
 
-    <!-- 底部操作栏（位于 TabBar 凸起按钮上方） -->
-    <div class="guide__footer">
-      <RedButton
-        type="primary"
-        size="large"
-        :disabled="!selectedRoute"
-        @click="startGuide"
-      >
-        {{ selectedRoute ? '开始导览' : '请先选择路线' }}
-      </RedButton>
-    </div>
+      <!-- 底部操作栏（位于 TabBar 凸起按钮上方） -->
+      <div class="guide__footer">
+        <RedButton
+          type="primary"
+          size="large"
+          :disabled="!selectedRoute"
+          @click="startGuide"
+        >
+          {{ selectedRoute ? '开始导览' : '请先选择路线' }}
+        </RedButton>
+      </div>
+    </template>
   </div>
 </template>
 
@@ -678,6 +888,272 @@ function startGuide() {
     font-size: @font-size-sm;
     font-weight: 600;
     color: #e8601c;
+  }
+
+  // ===== AI 偏好采集 & 推荐 =====
+  &__pref {
+    padding: @spacing-md 0 @spacing-lg;
+  }
+  &__pref-head {
+    padding-bottom: @spacing-lg;
+  }
+  &__pref-title {
+    margin: 0 0 @spacing-xs;
+    font-size: 22px;
+    font-weight: 700;
+    color: @color-text-primary;
+  }
+  &__pref-sub {
+    margin: 0;
+    font-size: @font-size-sm;
+    color: @color-text-secondary;
+    line-height: 1.6;
+  }
+  &__pref-edit {
+    margin-top: @spacing-sm;
+    padding: 0;
+    border: none;
+    background: transparent;
+    color: @color-primary;
+    font-size: @font-size-sm;
+    cursor: pointer;
+  }
+  &__pref-block {
+    margin-bottom: @spacing-lg;
+  }
+  &__pref-label {
+    margin: 0 0 @spacing-sm;
+    font-size: @font-size-base;
+    font-weight: 600;
+    color: @color-text-primary;
+  }
+  &__pref-label-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: @spacing-sm;
+  }
+  &__pref-duration {
+    font-size: @font-size-sm;
+    color: @color-primary;
+    font-weight: 600;
+  }
+
+  // 兴趣标签 chips
+  &__pref-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: @spacing-sm;
+  }
+  &__pref-chip {
+    height: 36px;
+    padding: 0 18px;
+    border: 1.5px solid @color-border;
+    border-radius: 18px;
+    background: @color-bg-card;
+    color: @color-text-regular;
+    font-size: @font-size-base;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s;
+
+    &.is-active {
+      border-color: @color-primary;
+      background: @color-primary;
+      color: #fff;
+      font-weight: 600;
+    }
+  }
+
+  // 体力等级卡片
+  &__pref-fitness {
+    display: flex;
+    gap: @spacing-sm;
+  }
+  &__pref-fit {
+    flex: 1;
+    padding: @spacing-sm @spacing-md;
+    border: 1.5px solid @color-border;
+    border-radius: @radius-base;
+    background: @color-bg-card;
+    text-align: left;
+    cursor: pointer;
+    transition: all 0.2s;
+
+    &.is-active {
+      border-color: @color-primary;
+      background: fade(@color-primary, 8%);
+    }
+  }
+  &__pref-fit-label {
+    display: block;
+    font-size: @font-size-base;
+    font-weight: 600;
+    color: @color-text-primary;
+    margin-bottom: 2px;
+  }
+  &__pref-fit-desc {
+    display: block;
+    font-size: @font-size-sm;
+    color: @color-text-secondary;
+  }
+
+  // 时长 slider
+  &__pref-range {
+    width: 100%;
+    accent-color: @color-primary;
+  }
+  &__pref-range-ticks {
+    display: flex;
+    justify-content: space-between;
+    font-size: @font-size-sm;
+    color: @color-text-secondary;
+    margin-top: 4px;
+  }
+
+  // AI 生成中
+  &__generating {
+    padding: 100px 0;
+    text-align: center;
+  }
+  &__ai-dots {
+    display: flex;
+    justify-content: center;
+    gap: 10px;
+    margin-bottom: @spacing-lg;
+    span {
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+      background: @color-primary;
+      animation: guide-ai-pulse 1.2s ease-in-out infinite;
+
+      &:nth-child(2) { animation-delay: 0.2s; }
+      &:nth-child(3) { animation-delay: 0.4s; }
+    }
+  }
+  @keyframes guide-ai-pulse {
+    0%, 80%, 100% { transform: scale(0.6); opacity: 0.4; }
+    40% { transform: scale(1); opacity: 1; }
+  }
+  &__ai-title {
+    margin: 0 0 @spacing-xs;
+    font-size: 18px;
+    color: @color-text-primary;
+  }
+  &__ai-sub {
+    margin: 0;
+    font-size: @font-size-sm;
+    color: @color-text-secondary;
+  }
+
+  // 推荐路线卡片
+  &__rec-card {
+    position: relative;
+    display: flex;
+    gap: @spacing-md;
+    padding: @spacing-md;
+    margin-bottom: @spacing-md;
+    border: 2px solid @color-border;
+    border-radius: @radius-lg;
+    background: @color-bg-card;
+    box-shadow: @shadow-card;
+    cursor: pointer;
+    transition: border-color 0.2s, box-shadow 0.2s, transform 0.15s;
+
+    &.is-selected {
+      border-color: @color-primary;
+      background: @color-primary-light;
+      box-shadow: 0 4px 14px rgba(196, 30, 58, 0.18);
+    }
+    &:active { transform: scale(0.99); }
+  }
+  &__rec-check {
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    width: 22px;
+    height: 22px;
+    line-height: 22px;
+    text-align: center;
+    border-radius: 50%;
+    background: @color-primary;
+    color: #fff;
+    font-size: 13px;
+    font-weight: bold;
+  }
+  &__rec-score {
+    flex-shrink: 0;
+    width: 56px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    border-right: 1px dashed @color-border;
+    padding-right: @spacing-md;
+  }
+  &__rec-score-num {
+    font-size: 28px;
+    font-weight: 700;
+    color: @color-primary;
+    line-height: 1;
+  }
+  &__rec-score-label {
+    font-size: @font-size-sm;
+    color: @color-text-secondary;
+    margin-top: 4px;
+  }
+  &__rec-info {
+    flex: 1;
+    min-width: 0;
+  }
+  &__rec-name {
+    margin: 0 0 4px;
+    font-size: @font-size-lg;
+    font-weight: 600;
+    color: @color-text-primary;
+  }
+  &__rec-highlight {
+    margin: 0 0 6px;
+    font-size: @font-size-sm;
+    color: #e0552b;
+    font-weight: 600;
+    line-height: 1.5;
+  }
+  &__rec-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: @spacing-md;
+    font-size: @font-size-sm;
+    color: @color-text-secondary;
+    margin-bottom: 6px;
+
+    span:first-child {
+      color: #f5a623;
+      letter-spacing: 2px;
+    }
+  }
+  &__rec-desc {
+    margin: 0;
+    font-size: @font-size-sm;
+    color: @color-text-regular;
+    line-height: 1.5;
+  }
+
+  &__skip {
+    display: block;
+    width: 100%;
+    padding: 12px 0;
+    border: none;
+    background: transparent;
+    color: @color-text-secondary;
+    font-size: @font-size-sm;
+    cursor: pointer;
+    text-align: center;
+
+    &--center {
+      margin-bottom: @spacing-sm;
+    }
   }
 
   // 底部固定操作栏

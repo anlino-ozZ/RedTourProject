@@ -572,21 +572,22 @@ const hotQuestions: HotQuestion[] = [
     display: flex;
     justify-content: space-between;
     margin: @spacing-sm 0 @spacing-md;
-    padding: 0 @spacing-xs;
+    padding: 0;
+    gap: 8px;
   }
 
   &__quick-item {
     display: flex;
     flex-direction: column;
     align-items: center;
-    gap: @spacing-sm;
+    gap: 6px;
     flex: 1;
     cursor: pointer;
   }
 
   &__quick-icon {
-    width: 52px;
-    height: 52px;
+    width: 60px;
+    height: 60px;
     border-radius: 14px;
     display: flex;
     align-items: center;
@@ -595,8 +596,8 @@ const hotQuestions: HotQuestion[] = [
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
 
     svg {
-      width: 26px;
-      height: 26px;
+      width: 30px;
+      height: 30px;
     }
 
     &:active {

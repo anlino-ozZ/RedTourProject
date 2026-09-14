@@ -23,6 +23,12 @@ const routes: RouteRecordRaw[] = [
     meta: { title: '智能导览', showTabBar: true },
   },
   {
+    path: '/guide/navigate',
+    name: 'guide-navigate',
+    component: () => import('@/views/GuideNav.vue'),
+    meta: { title: '导览进行中', showTabBar: false },
+  },
+  {
     path: '/qa',
     name: 'qa',
     component: () => import('@/views/Qa.vue'),
