@@ -213,7 +213,7 @@ function goRecommend() {
 
     <!-- ===== AI 推荐独立入口（路由跳转，不展开面板） ===== -->
     <button class="guide__ai-entry" @click="goRecommend">
-      <span class="guide__ai-entry-icon">🤖</span>
+      <img class="guide__ai-entry-icon" src="/assets/mascot.png" alt="" />
       <span class="guide__ai-entry-text">AI 为我推荐专属路线</span>
       <span class="guide__ai-entry-arrow">→</span>
     </button>
@@ -637,7 +637,7 @@ function goRecommend() {
 
     &:active { background: fade(@color-primary, 10%); }
   }
-  &__ai-entry-icon { font-size: 22px; }
+  &__ai-entry-icon { width: 32px; height: 32px; object-fit: contain; }
   &__ai-entry-text {
     flex: 1;
     font-size: @font-size-base;
