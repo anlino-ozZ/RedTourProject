@@ -228,46 +228,52 @@ const pathD = computed(() => {
       </div>
     </div>
 
-    <!-- 打卡印章 + 语音讲解 + 模式切换 -->
-    <div class="guide-nav__actions">
-      <button
-        class="guide-nav__action"
-        :class="{ 'is-done': stampMap[currentSpot?.id ?? -1] }"
-        @click="
-          currentSpot && (stampMap[currentSpot.id] = !stampMap[currentSpot.id])
-        "
-      >
-        <span class="guide-nav__action-icon">{{ stampMap[currentSpot?.id ?? -1] ? '✅' : '🔖' }}</span>
-        <span class="guide-nav__action-label">打卡印章</span>
-      </button>
-
-      <button
-        class="guide-nav__action"
-        :class="{ 'is-playing': playing }"
-        @click="toggleAudio"
-      >
-        <span class="guide-nav__action-icon">{{ playing ? '🔊' : '🎧' }}</span>
-        <span class="guide-nav__action-label">
-          {{ playing ? '讲解播放中' : '语音讲解' }}
-        </span>
-      </button>
-
-      <div class="guide-nav__action guide-nav__action--mode">
-        <span class="guide-nav__action-icon">🚶</span>
+    <!-- 打卡印章 + 语音讲解 + 下个景点（横向三栏卡片） -->
+    <div class="guide-nav__toolbar">
+      <div class="guide-nav__tool">
+        <div class="guide-nav__tool-top">
+          <span class="guide-nav__tool-icon">{{ stampMap[currentSpot?.id ?? -1] ? '✅' : '🔖' }}</span>
+          <span class="guide-nav__tool-title">打卡印章</span>
+          <span v-if="currentSpot" class="guide-nav__tool-badge">{{ currentSpot.name.slice(0, 4) }}</span>
+        </div>
         <button
-          class="guide-nav__mode-btn"
-          :class="{ 'is-active': mode === 'walk' }"
-          @click="mode = 'walk'"
+          class="guide-nav__tool-sub"
+          :class="{ 'is-done': stampMap[currentSpot?.id ?? -1] }"
+          @click="
+            currentSpot && (stampMap[currentSpot.id] = !stampMap[currentSpot.id])
+          "
         >
-          步行
+          {{ stampMap[currentSpot?.id ?? -1] ? '已解锁' : '点击打卡' }}
         </button>
+      </div>
+
+      <div class="guide-nav__tool">
+        <div class="guide-nav__tool-top">
+          <span class="guide-nav__tool-icon">🎧</span>
+          <span class="guide-nav__tool-title">语音讲解</span>
+        </div>
         <button
-          class="guide-nav__mode-btn"
-          :class="{ 'is-active': mode === 'drive' }"
-          @click="mode = 'drive'"
+          class="guide-nav__tool-sub"
+          :class="{ 'is-playing': playing }"
+          @click="toggleAudio"
         >
-          驾车
+          {{ playing ? '播放中...' : '点击播放' }}
         </button>
+      </div>
+
+      <div class="guide-nav__tool">
+        <div class="guide-nav__tool-top">
+          <span class="guide-nav__tool-icon">→</span>
+          <span class="guide-nav__tool-title">下个景点</span>
+        </div>
+        <button
+          v-if="nextSpot"
+          class="guide-nav__tool-sub"
+          @click="currentIndex++"
+        >
+          {{ nextSpot.name }} · {{ mode === 'walk' ? '步行' : '驾车' }}
+        </button>
+        <span v-else class="guide-nav__tool-sub guide-nav__tool-sub--muted">终点</span>
       </div>
     </div>
 
@@ -533,61 +539,65 @@ const pathD = computed(() => {
     color: @color-text-regular;
   }
 
-  // 操作区：打卡 / 语音 / 模式
-  &__actions {
+  // 操作区：横向三栏卡片（打卡印章 / 语音讲解 / 下个景点）
+  &__toolbar {
     display: flex;
-    gap: @spacing-sm;
+    background: @color-bg-card;
+    border-radius: @radius-lg;
+    box-shadow: @shadow-card;
     margin-bottom: @spacing-md;
+    overflow: hidden;
+    border: 1px solid @color-border;
   }
-  &__action {
+  &__tool {
     flex: 1;
+    padding: @spacing-sm @spacing-md;
+    border-right: 1px solid @color-border;
     display: flex;
     flex-direction: column;
+    gap: 6px;
+
+    &:last-child { border-right: none; }
+  }
+  &__tool-top {
+    display: flex;
     align-items: center;
     gap: 4px;
-    padding: @spacing-sm;
-    border: 1.5px solid @color-border;
-    border-radius: @radius-base;
-    background: @color-bg-card;
-    cursor: pointer;
-    transition: all 0.2s;
-
-    &--mode {
-      padding: 0;
-      justify-content: center;
-      gap: 0;
-    }
-    &.is-done {
-      border-color: #52c41a;
-      background: #f6ffed;
-    }
-    &.is-playing {
-      border-color: @color-primary;
-      background: @color-primary-light;
-    }
   }
-  &__action-icon {
-    font-size: 20px;
+  &__tool-icon {
+    font-size: 16px;
     line-height: 1;
   }
-  &__action-label {
-    font-size: 11px;
-    color: @color-text-secondary;
+  &__tool-title {
+    font-size: 13px;
+    font-weight: 600;
+    color: @color-text-primary;
   }
-  &__mode-btn {
-    width: 50%;
-    height: 28px;
+  &__tool-badge {
+    margin-left: auto;
+    padding: 1px 6px;
+    border-radius: 8px;
+    background: fade(@color-primary, 10%);
+    color: @color-primary;
+    font-size: 10px;
+    font-weight: 500;
+  }
+  &__tool-sub {
+    padding: 0;
     border: none;
     background: transparent;
-    font-size: @font-size-sm;
     color: @color-text-secondary;
+    font-size: 12px;
+    text-align: left;
     cursor: pointer;
+    font-weight: 500;
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
 
-    &.is-active {
-      color: @color-primary;
-      font-weight: 600;
-      background: @color-primary-light;
-    }
+    &.is-done { color: #52c41a; }
+    &.is-playing { color: @color-primary; }
+    &--muted { color: @color-text-secondary; cursor: default; }
   }
 
   &__bottom {
