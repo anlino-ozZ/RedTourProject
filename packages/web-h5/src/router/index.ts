@@ -38,7 +38,14 @@ const routes: RouteRecordRaw[] = [
     path: '/qa',
     name: 'qa',
     component: () => import('@/views/Qa.vue'),
-    meta: { title: '问答', showTabBar: true },
+    // 问答页使用自定义白底头部，不显示 Layout 红色标题栏
+    meta: { title: '', showTabBar: true },
+  },
+  {
+    path: '/qa/history',
+    name: 'qa-history',
+    component: () => import('@/views/QaHistory.vue'),
+    meta: { title: '', showTabBar: false },
   },
   {
     path: '/products',

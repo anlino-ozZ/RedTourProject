@@ -1,7 +1,7 @@
 <script setup lang="ts">
 /**
  * H5 底部导航栏
- * 五个 Tab：首页 / 导览 / 问答 / 互动 / 我的
+ * 五个 Tab：首页 / 导览 / AI问答（中间凸起 CTA） / 互动 / 我的
  * 路由驱动高亮，点击跳转对应路由
  */
 import { useRoute, useRouter } from 'vue-router'
@@ -32,12 +32,12 @@ const tabs: TabItem[] = [
     title: '导览',
     path: '/guide',
     icon:
-      'M12 2a8 8 0 00-8 8c0 5 8 12 8 12s8-7 8-12a8 8 0 00-8-8zM12 11a1.5 1.5 0 100 3 1.5 1.5 0 000-3z',
+      'M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z',
     iconActive:
-      'M12 2a8 8 0 00-8 8c0 5 8 12 8 12s8-7 8-12a8 8 0 00-8-8zM12 11a1.5 1.5 0 100 3 1.5 1.5 0 000-3z',
+      'M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z',
   },
   {
-    title: '问答',
+    title: 'AI问答',
     path: '/qa',
     highlight: true,
     icon:
@@ -49,9 +49,9 @@ const tabs: TabItem[] = [
     title: '互动',
     path: '/interactive',
     icon:
-      'M12 3a2 2 0 012 2v1h2a2 2 0 012 2v11a2 2 0 01-2 2H8a2 2 0 01-2-2V8a2 2 0 012-2h2V5a2 2 0 012-2zM9 13l2 2 4-4',
+      'M8 21h8M12 17v4M7 4h10v5a5 5 0 01-10 0V4zM7 6H4v1a3 3 0 003 3M17 6h3v1a3 3 0 01-3 3',
     iconActive:
-      'M12 3a2 2 0 012 2v1h2a2 2 0 012 2v11a2 2 0 01-2 2H8a2 2 0 01-2-2V8a2 2 0 012-2h2V5a2 2 0 012-2zM9 13l2 2 4-4',
+      'M8 21h8M12 17v4M7 4h10v5a5 5 0 01-10 0V4zM7 6H4v1a3 3 0 003 3M17 6h3v1a3 3 0 01-3 3',
   },
   {
     title: '我的',
@@ -66,7 +66,7 @@ const tabs: TabItem[] = [
 const route = useRoute()
 const router = useRouter()
 
-// 当前激活的 Tab：精确匹配 + 子路径匹配（如 /guide/list 匹配 /guide）
+// 当前激活的 Tab：精确匹配 + 子路径匹配（如 /guide/navigate 匹配 /guide）
 const activePath = computed(() => {
   const path = route.path
   // 首页精确匹配

@@ -353,7 +353,7 @@ const hotQuestions: HotQuestion[] = [
           v-for="q in hotQuestions"
           :key="q.id"
           class="home__qa-item"
-          @click="router.push('/qa')"
+          @click="router.push({ path: '/qa', query: { q: q.text } })"
         >
           <span class="home__qa-q">?</span>
           <span class="home__qa-text">{{ q.text }}</span>
