@@ -279,7 +279,13 @@ const pathD = computed(() => {
 
     <!-- 返回 & 完成 -->
     <div class="guide-nav__bottom">
-      <button class="guide-nav__back" @click="router.back()">← 退出导览</button>
+      <button class="guide-nav__back" @click="router.back()">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+          stroke-linecap="round" stroke-linejoin="round">
+          <path d="M15 6l-6 6 6 6" />
+        </svg>
+        退出导览
+      </button>
       <button
         v-if="remainingCount === 0"
         class="guide-nav__finish"
@@ -614,11 +620,26 @@ const pathD = computed(() => {
     z-index: 90;
   }
   &__back {
-    border: none;
-    background: transparent;
-    color: @color-text-secondary;
-    font-size: @font-size-sm;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    border: 1px solid fade(@color-primary, 35%);
+    background: @color-primary-light;
+    color: @color-primary;
+    font-size: @font-size-base;
+    font-weight: 600;
+    padding: 9px 18px;
+    border-radius: 20px;
     cursor: pointer;
+    box-shadow: 0 2px 8px rgba(196, 30, 58, 0.12);
+
+    svg {
+      width: 16px;
+      height: 16px;
+    }
+    &:active {
+      background: fade(@color-primary, 12%);
+    }
   }
   &__finish {
     border: none;
