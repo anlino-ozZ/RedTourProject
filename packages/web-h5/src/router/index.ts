@@ -63,7 +63,8 @@ const routes: RouteRecordRaw[] = [
     path: '/profile',
     name: 'profile',
     component: () => import('@/views/Profile.vue'),
-    meta: { title: '我的', showTabBar: true },
+    // 我的页使用自定义红色头部（用户信息区），不显示 Layout 标题栏
+    meta: { title: '', showTabBar: true },
   },
 ]
 
