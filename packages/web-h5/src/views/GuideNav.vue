@@ -277,17 +277,18 @@ const pathD = computed(() => {
       </div>
     </div>
 
-    <!-- 返回 & 完成 -->
-    <div class="guide-nav__bottom">
-      <button class="guide-nav__back" @click="router.back()">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
-          stroke-linecap="round" stroke-linejoin="round">
-          <path d="M15 6l-6 6 6 6" />
-        </svg>
-        退出导览
-      </button>
+    <!-- 退出导览：固定在页面左下角，不随滚动 -->
+    <button class="guide-nav__back" @click="router.back()">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+        stroke-linecap="round" stroke-linejoin="round">
+        <path d="M15 6l-6 6 6 6" />
+      </svg>
+      退出导览
+    </button>
+
+    <!-- 路线完成按钮 -->
+    <div v-if="remainingCount === 0" class="guide-nav__bottom">
       <button
-        v-if="remainingCount === 0"
         class="guide-nav__finish"
         @click="router.push('/guide')"
       >
@@ -610,16 +611,18 @@ const pathD = computed(() => {
     position: fixed;
     left: 0;
     right: 0;
-    bottom: calc(56px + 18px + 4px);
-    padding: @spacing-sm @spacing-md;
-    background: fade(@color-bg-card, 96%);
-    box-shadow: 0 -2px 10px rgba(0, 0, 0, 0.06);
+    bottom: calc(env(safe-area-inset-bottom) + @spacing-md);
+    padding: 0 @spacing-md;
     display: flex;
-    justify-content: space-between;
+    justify-content: flex-end;
     align-items: center;
     z-index: 90;
   }
   &__back {
+    position: fixed;
+    left: @spacing-md;
+    bottom: calc(env(safe-area-inset-bottom) + @spacing-md);
+    z-index: 91;
     display: inline-flex;
     align-items: center;
     gap: 4px;
