@@ -57,7 +57,15 @@ const routes: RouteRecordRaw[] = [
     path: '/interactive',
     name: 'interactive',
     component: () => import('@/views/Interactive.vue'),
-    meta: { title: '互动中心', showTabBar: true },
+    // 互动页使用暗色 Hero 自定义头部，不显示 Layout 红色标题栏
+    meta: { title: '', showTabBar: true },
+  },
+  {
+    path: '/interactive/script',
+    name: 'interactive-script',
+    component: () => import('@/views/ScriptPlay.vue'),
+    // 沉浸式剧本页：全屏深色剧场，不显示标题栏与 TabBar
+    meta: { title: '', showTabBar: false },
   },
   {
     path: '/profile',
