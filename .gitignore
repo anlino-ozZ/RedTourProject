@@ -11,6 +11,8 @@ __pycache__/
 *.egg-info/
 .pytest_cache/
 .ruff_cache/
+# 树莓派讲解音频下载缓存
+packages/hardware-rpi/audio_cache/
 
 # ===== AI 大模型文件 / 权重 / 编译产物 =====
 *.pt

@@ -5,6 +5,7 @@ interface ImportMetaEnv {
   readonly VITE_TOUCH_SCENIC_AREA_ID: string
   readonly VITE_TOUCH_LOCATION: string
   readonly VITE_TOUCH_DEVICE_NO: string
+  readonly VITE_H5_BASE_URL: string
 }
 
 interface ImportMeta {

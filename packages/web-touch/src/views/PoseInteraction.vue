@@ -2,9 +2,12 @@
 // 姿态互动页（W-T-05 骨架 MVP + W-T-06 WebSocket 实时对接）
 // 摄像头抽帧 → /api/v1/pose/stream → action/confidence/keypoints/triggerContent
 // 后端不可达 / 无摄像头时自动退回模拟数据演示
-import { ref, onMounted, onBeforeUnmount } from 'vue'
+import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
 import { useRouter } from 'vue-router'
+import QRCode from 'qrcode'
+import type { PoseTriggerContent } from '@red-tour-project/common'
 import { usePoseStream, type PoseResult } from '@/composables/usePoseStream'
+import { useClaimToken } from '@/composables/useClaimToken'
 
 const router = useRouter()
 function goHome() {
@@ -87,6 +90,7 @@ interface PoseSegment {
   label: string
   confidence: number
   duration: number // 秒
+  trigger?: PoseTriggerContent // 达标段携带的模拟讲解内容
 }
 const seg = (
   from: Kp[],
@@ -95,23 +99,46 @@ const seg = (
   label: string,
   confidence: number,
   duration: number,
-): PoseSegment => ({ from, to, action, label, confidence, duration })
+  trigger?: PoseTriggerContent,
+): PoseSegment => ({ from, to, action, label, confidence, duration, trigger })
 
 // 演示时间线：站立 → 挥手 → 敬礼 → 推磨 → 循环
 const SEGMENTS: PoseSegment[] = [
   seg(POSE_STAND, POSE_STAND, 'unknown', '未识别', 0.32, 1.4),
   seg(POSE_STAND, WAVE_A, 'wave', '挥手', 0.62, 0.7),
-  seg(WAVE_A, WAVE_B, 'wave', '挥手', 0.88, 0.55),
-  seg(WAVE_B, WAVE_A, 'wave', '挥手', 0.9, 0.55),
-  seg(WAVE_A, WAVE_B, 'wave', '挥手', 0.87, 0.55),
+  seg(WAVE_A, WAVE_B, 'wave', '挥手', 0.88, 0.55, {
+    title: '挥手致意 · 红军标语前的问候',
+    audioUrl: '/audio/pose/wave.mp3',
+  }),
+  seg(WAVE_B, WAVE_A, 'wave', '挥手', 0.9, 0.55, {
+    title: '挥手致意 · 红军标语前的问候',
+    audioUrl: '/audio/pose/wave.mp3',
+  }),
+  seg(WAVE_A, WAVE_B, 'wave', '挥手', 0.87, 0.55, {
+    title: '挥手致意 · 红军标语前的问候',
+    audioUrl: '/audio/pose/wave.mp3',
+  }),
   seg(WAVE_B, POSE_STAND, 'unknown', '未识别', 0.4, 0.7),
   seg(POSE_STAND, SALUTE, 'salute', '敬礼', 0.6, 0.7),
-  seg(SALUTE, SALUTE, 'salute', '敬礼', 0.91, 2.2),
+  seg(SALUTE, SALUTE, 'salute', '敬礼', 0.91, 2.2, {
+    title: '军礼的由来',
+    audioUrl: '/audio/pose/salute.mp3',
+    wikiRef: 'wiki/军礼',
+  }),
   seg(SALUTE, POSE_STAND, 'unknown', '未识别', 0.42, 0.7),
   seg(POSE_STAND, MILL_A, 'mill', '推磨', 0.63, 0.7),
-  seg(MILL_A, MILL_B, 'mill', '推磨', 0.9, 0.8),
-  seg(MILL_B, MILL_A, 'mill', '推磨', 0.88, 0.8),
-  seg(MILL_A, MILL_B, 'mill', '推磨', 0.9, 0.8),
+  seg(MILL_A, MILL_B, 'mill', '推磨', 0.9, 0.8, {
+    title: '红嫂推磨 · 沂蒙精神',
+    audioUrl: '/audio/pose/mill.mp3',
+  }),
+  seg(MILL_B, MILL_A, 'mill', '推磨', 0.88, 0.8, {
+    title: '红嫂推磨 · 沂蒙精神',
+    audioUrl: '/audio/pose/mill.mp3',
+  }),
+  seg(MILL_A, MILL_B, 'mill', '推磨', 0.9, 0.8, {
+    title: '红嫂推磨 · 沂蒙精神',
+    audioUrl: '/audio/pose/mill.mp3',
+  }),
   seg(MILL_B, POSE_STAND, 'unknown', '未识别', 0.38, 0.7),
 ]
 const TOTAL_DURATION = SEGMENTS.reduce((s, x) => s + x.duration, 0)
@@ -126,42 +153,118 @@ const personVisible = ref(true) // 实时模式下未检测到人体时为 false
 // 实时识别结果（仅在 status === 'live' 时驱动渲染）
 const realtimeKpts = ref<Kp[]>([])
 
-// ===== 全屏触发特效（confidence ≥ 0.85） =====
+// ===== 全屏触发特效（confidence ≥ 0.85，W-T-06/W-T-07）=====
 const TRIGGER_THRESHOLD = 0.85
 const TRIGGER_REARM = 0.75 // 置信度回落至此值以下才允许再次触发
-const EFFECT_DURATION = 3500
-const EFFECT_COOLDOWN = 1500
+const EFFECT_COOLDOWN = 750 // 全屏页关闭后冷却，防止同一动作重复触发
 const effectVisible = ref(false)
 const effectAction = ref('')
-const effectContent = ref('')
+const effectActionKey = ref('')
+const effectTrigger = ref<PoseTriggerContent | null>(null)
 let triggerArmed = true
-let effectHideTimer: ReturnType<typeof setTimeout> | null = null
 let rearmTimer: ReturnType<typeof setTimeout> | null = null
 
-function showEffect(action: string, triggerContent?: string) {
+// ===== 成就二维码（5 分钟有效临时 token，W-T-07）=====
+const claim = useClaimToken()
+const qrDataUrl = ref('')
+
+async function renderQr() {
+  if (!claim.claimUrl.value) {
+    qrDataUrl.value = ''
+    return
+  }
+  try {
+    qrDataUrl.value = await QRCode.toDataURL(claim.claimUrl.value, {
+      width: 320,
+      margin: 1,
+      color: { dark: '#1a1210', light: '#ffffff' },
+    })
+  } catch {
+    qrDataUrl.value = ''
+  }
+}
+
+function refreshQr() {
+  claim.issue(effectActionKey.value)
+  void renderQr()
+}
+
+// ===== 讲解音频（相对路径基于业务后端根地址解析）=====
+const audioRef = ref<HTMLAudioElement | null>(null)
+const audioPlaying = ref(false)
+const audioError = ref(false)
+
+function resolveMediaUrl(url?: string): string {
+  if (!url) return ''
+  if (/^https?:\/\//.test(url)) return url
+  const base = import.meta.env.VITE_API_BASE_URL || ''
+  // /api/v1 是接口前缀，静态媒体位于服务根路径
+  const root = base.replace(/\/api\/v1\/?$/, '')
+  return `${root}${url.startsWith('/') ? '' : '/'}${url}`
+}
+
+const audioSrc = computed(() => resolveMediaUrl(effectTrigger.value?.audioUrl))
+
+function resetAudio() {
+  audioPlaying.value = false
+  audioError.value = false
+  const el = audioRef.value
+  if (el) {
+    el.pause()
+    el.currentTime = 0
+    // src 变化后尝试自动播放（浏览器策略允许时）
+    void el.play().then(
+      () => (audioPlaying.value = true),
+      () => (audioPlaying.value = false),
+    )
+  }
+}
+
+function toggleAudio() {
+  const el = audioRef.value
+  if (!el || audioError.value) return
+  if (el.paused) {
+    void el.play().then(() => (audioPlaying.value = true), () => {})
+  } else {
+    el.pause()
+    audioPlaying.value = false
+  }
+}
+
+function showEffect(action: string, trigger?: PoseTriggerContent | null) {
+  effectActionKey.value = action
   effectAction.value = ACTION_LABELS[action] ?? action
-  effectContent.value = triggerContent || '动作识别成功，为您解锁对应讲解内容'
+  effectTrigger.value = trigger ?? null
   effectVisible.value = true
-  if (effectHideTimer) clearTimeout(effectHideTimer)
-  effectHideTimer = setTimeout(() => {
-    effectVisible.value = false
-    if (rearmTimer) clearTimeout(rearmTimer)
-    rearmTimer = setTimeout(() => {
-      triggerArmed = true
-    }, EFFECT_COOLDOWN)
-  }, EFFECT_DURATION)
+  // 签发 5 分钟领取 token 并渲染二维码
+  claim.issue(action)
+  void renderQr()
+  // 音频元素在 v-if 层内挂载完成后自动播放
+  requestAnimationFrame(() => resetAudio())
+}
+
+function hideEffect() {
+  effectVisible.value = false
+  audioRef.value?.pause()
+  claim.clear()
+  qrDataUrl.value = ''
+  if (rearmTimer) clearTimeout(rearmTimer)
+  rearmTimer = setTimeout(() => {
+    triggerArmed = true
+  }, EFFECT_COOLDOWN)
 }
 
 // 统一的识别结果入口：模拟时间线与 WS 结果都走这里（单一事实源）
-function applyResult(action: string, confidence: number, triggerContent?: string) {
+function applyResult(action: string, confidence: number, trigger?: PoseTriggerContent | null) {
   currentAction.value = action
   currentConfidence.value = confidence
   currentLabel.value = ACTION_LABELS[action] ?? action
 
   if (confidence < TRIGGER_REARM) triggerArmed = true
-  if (triggerArmed && confidence >= TRIGGER_THRESHOLD && action !== 'unknown') {
+  // 全屏讲解页展示期间不重复触发；关闭并冷却后才允许下一次
+  if (!effectVisible.value && triggerArmed && confidence >= TRIGGER_THRESHOLD && action !== 'unknown') {
     triggerArmed = false
-    showEffect(action, triggerContent)
+    showEffect(action, trigger)
   }
 }
 
@@ -267,7 +370,7 @@ function stepMock(now: number) {
   const confidence = Math.min(0.99, active.confidence + Math.sin(now / 400) * 0.015)
 
   drawFrame(kpts)
-  applyResult(active.action, confidence)
+  applyResult(active.action, confidence, active.trigger)
 }
 
 // 唯一渲染循环：实时连接时画真实关键点，否则跑模拟时间线
@@ -303,8 +406,8 @@ onBeforeUnmount(() => {
   window.removeEventListener('resize', resizeCanvas)
   resizeObserver?.disconnect()
   resizeObserver = null
-  if (effectHideTimer) clearTimeout(effectHideTimer)
   if (rearmTimer) clearTimeout(rearmTimer)
+  audioRef.value?.pause()
   stopCamera()
 })
 </script>
@@ -402,14 +505,78 @@ onBeforeUnmount(() => {
       </aside>
     </div>
 
-    <!-- W-T-06：达标全屏特效（W-T-07 将在此页扩展讲解音频 + 成就二维码） -->
+    <!-- W-T-06/W-T-07：达标全屏讲解页（光环特效 + 讲解音频 + 成就二维码） -->
     <transition name="effect-fade">
       <div v-if="effectVisible" class="pose-effect">
         <div class="pose-effect__ring" />
         <div class="pose-effect__ring pose-effect__ring--delay" />
+
         <span class="pose-effect__badge">动作识别成功</span>
         <h2 class="pose-effect__action">{{ effectAction }}</h2>
-        <p class="pose-effect__content">{{ effectContent }}</p>
+        <p class="pose-effect__title">
+          {{ effectTrigger?.title || '为您解锁对应讲解内容' }}
+        </p>
+
+        <!-- 讲解音频 -->
+        <div v-if="audioSrc" class="pose-effect__audio">
+          <button
+            type="button"
+            class="pose-effect__audio-btn"
+            :class="{ 'pose-effect__audio-btn--playing': audioPlaying }"
+            :disabled="audioError"
+            @click="toggleAudio"
+          >
+            <svg v-if="!audioPlaying" viewBox="0 0 24 24" width="26" height="26" fill="currentColor">
+              <path d="M8 5.5v13a1 1 0 0 0 1.52.86l10.2-6.5a1 1 0 0 0 0-1.72L9.52 4.64A1 1 0 0 0 8 5.5z" />
+            </svg>
+            <svg v-else viewBox="0 0 24 24" width="24" height="24" fill="currentColor">
+              <rect x="6.5" y="5" width="3.6" height="14" rx="1.2" />
+              <rect x="13.9" y="5" width="3.6" height="14" rx="1.2" />
+            </svg>
+          </button>
+          <div class="pose-effect__audio-meta">
+            <span class="pose-effect__audio-label">
+              {{ audioError ? '讲解音频暂不可用' : audioPlaying ? '讲解播放中…' : '讲解音频已就绪，点击播放' }}
+            </span>
+            <div class="pose-effect__audio-wave" :class="{ 'pose-effect__audio-wave--on': audioPlaying }">
+              <i /><i /><i /><i /><i /><i /><i />
+            </div>
+          </div>
+          <audio
+            ref="audioRef"
+            :src="audioSrc"
+            preload="auto"
+            @play="audioPlaying = true"
+            @pause="audioPlaying = false"
+            @ended="audioPlaying = false"
+            @error="audioError = true"
+          />
+        </div>
+
+        <!-- 右下角成就二维码（临时 token，5 分钟有效） -->
+        <div class="pose-effect__qr" :class="{ 'pose-effect__qr--expired': claim.expired.value }">
+          <template v-if="!claim.expired.value">
+            <img v-if="qrDataUrl" :src="qrDataUrl" class="pose-effect__qr-img" alt="成就领取二维码" />
+            <p class="pose-effect__qr-title">扫码领取「{{ effectAction }}」成就勋章</p>
+            <p class="pose-effect__qr-tip">
+              手机扫码打开 · <b>{{ claim.countdown.value }}</b> 内有效
+            </p>
+          </template>
+          <template v-else>
+            <div class="pose-effect__qr-expired">
+              <svg viewBox="0 0 24 24" width="44" height="44" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round">
+                <circle cx="12" cy="12" r="9" />
+                <path d="M12 7v6M12 16.2v.3" />
+              </svg>
+              <span>二维码已失效</span>
+            </div>
+            <button type="button" class="pose-effect__qr-refresh" @click="refreshQr">
+              刷新二维码
+            </button>
+          </template>
+        </div>
+
+        <button type="button" class="pose-effect__close" @click="hideEffect">继续体验</button>
       </div>
     </transition>
   </div>
@@ -556,7 +723,7 @@ onBeforeUnmount(() => {
   }
 }
 
-// ===== 达标全屏特效（W-T-06） =====
+// ===== 达标全屏讲解页（W-T-06 特效 / W-T-07 音频 + 二维码） =====
 .pose-effect {
   position: fixed;
   inset: 0;
@@ -571,7 +738,6 @@ onBeforeUnmount(() => {
     rgba(196, 30, 58, 0.55) 0%,
     rgba(10, 8, 8, 0.94) 70%
   );
-  pointer-events: none;
 
   &__ring {
     position: absolute;
@@ -580,6 +746,7 @@ onBeforeUnmount(() => {
     border-radius: 50%;
     border: 4px solid rgba(245, 197, 66, 0.7);
     animation: effect-ring 2.2s ease-out infinite;
+    pointer-events: none;
 
     &--delay {
       animation-delay: 1.1s;
@@ -592,6 +759,7 @@ onBeforeUnmount(() => {
     color: @color-touch-gold;
     font-size: 1.6rem;
     letter-spacing: 6px;
+    pointer-events: none;
   }
   &__action {
     margin: 0;
@@ -603,15 +771,191 @@ onBeforeUnmount(() => {
     text-shadow:
       0 0 40px rgba(245, 197, 66, 0.8),
       0 0 90px rgba(196, 30, 58, 0.7);
+    pointer-events: none;
   }
-  &__content {
+  &__title {
     margin: 0;
-    max-width: 70vw;
+    max-width: 60vw;
     text-align: center;
-    font-size: 2rem;
-    line-height: 1.7;
-    color: rgba(255, 255, 255, 0.88);
+    font-size: 2.4rem;
+    line-height: 1.6;
+    letter-spacing: 2px;
+    color: @color-touch-gold;
+    pointer-events: none;
   }
+
+  // ---- 讲解音频条 ----
+  &__audio {
+    display: flex;
+    align-items: center;
+    gap: 22px;
+    padding: 18px 36px 18px 20px;
+    border-radius: 999px;
+    border: 1px solid rgba(245, 197, 66, 0.5);
+    background-color: rgba(0, 0, 0, 0.5);
+    backdrop-filter: blur(4px);
+    pointer-events: auto;
+  }
+  &__audio-btn {
+    flex-shrink: 0;
+    width: 64px;
+    height: 64px;
+    border-radius: 50%;
+    border: none;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: linear-gradient(160deg, #f5d572 0%, @color-touch-gold 60%, #c99a1f 100%);
+    color: #4a2c00;
+    cursor: pointer;
+    box-shadow: 0 0 24px rgba(245, 197, 66, 0.45);
+    transition: transform 0.2s ease;
+
+    &:hover:not(:disabled) {
+      transform: scale(1.06);
+    }
+    &:disabled {
+      background: #555;
+      color: #999;
+      box-shadow: none;
+      cursor: not-allowed;
+    }
+  }
+  &__audio-meta {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    min-width: 240px;
+  }
+  &__audio-label {
+    font-size: 1.5rem;
+    letter-spacing: 2px;
+    color: rgba(255, 255, 255, 0.9);
+  }
+  &__audio-wave {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    height: 16px;
+
+    i {
+      width: 4px;
+      height: 6px;
+      border-radius: 2px;
+      background-color: rgba(245, 197, 66, 0.45);
+    }
+    &--on i {
+      animation: audio-bar 0.9s ease-in-out infinite;
+      &:nth-child(1) { animation-delay: 0s; }
+      &:nth-child(2) { animation-delay: 0.12s; }
+      &:nth-child(3) { animation-delay: 0.24s; }
+      &:nth-child(4) { animation-delay: 0.36s; }
+      &:nth-child(5) { animation-delay: 0.24s; }
+      &:nth-child(6) { animation-delay: 0.12s; }
+      &:nth-child(7) { animation-delay: 0s; }
+    }
+  }
+
+  // ---- 右下角成就二维码 ----
+  &__qr {
+    position: absolute;
+    right: 40px;
+    bottom: 40px;
+    width: 320px;
+    padding: 22px 22px 20px;
+    border-radius: 18px;
+    background-color: #fff;
+    color: #2b1d18;
+    text-align: center;
+    box-shadow: 0 12px 48px rgba(0, 0, 0, 0.5);
+    pointer-events: auto;
+    transition: opacity 0.3s ease;
+  }
+  &__qr-img {
+    display: block;
+    width: 272px;
+    height: 272px;
+    margin: 0 auto 14px;
+  }
+  &__qr-title {
+    margin: 0 0 6px;
+    font-size: 1.5rem;
+    font-weight: 700;
+    line-height: 1.5;
+    color: #c41e3a;
+  }
+  &__qr-tip {
+    margin: 0;
+    font-size: 1.25rem;
+    color: #7a6e68;
+
+    b {
+      color: #c41e3a;
+      font-variant-numeric: tabular-nums;
+    }
+  }
+  &__qr-expired {
+    height: 272px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 14px;
+    color: #9a9a9a;
+    font-size: 1.7rem;
+    letter-spacing: 2px;
+    border: 2px dashed #d8d2cd;
+    border-radius: 12px;
+    margin-bottom: 14px;
+  }
+  &__qr-refresh {
+    margin-top: 12px;
+    padding: 12px 36px;
+    border-radius: 999px;
+    border: 1px solid #c41e3a;
+    background-color: #fff;
+    color: #c41e3a;
+    font-size: 1.5rem;
+    letter-spacing: 2px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+
+    &:hover {
+      background-color: #c41e3a;
+      color: #fff;
+    }
+  }
+  &__qr--expired {
+    opacity: 0.92;
+  }
+
+  // ---- 底部关闭 ----
+  &__close {
+    position: absolute;
+    bottom: 44px;
+    left: 50%;
+    transform: translateX(-50%);
+    padding: 16px 56px;
+    border-radius: 999px;
+    border: 1px solid rgba(255, 255, 255, 0.55);
+    background-color: rgba(0, 0, 0, 0.45);
+    color: #fff;
+    font-size: 1.7rem;
+    letter-spacing: 6px;
+    cursor: pointer;
+    pointer-events: auto;
+    transition: all 0.2s ease;
+
+    &:hover {
+      border-color: @color-touch-gold;
+      color: @color-touch-gold;
+    }
+  }
+}
+
+@keyframes audio-bar {
+  0%, 100% { height: 5px; }
+  50% { height: 16px; }
 }
 
 @keyframes effect-ring {

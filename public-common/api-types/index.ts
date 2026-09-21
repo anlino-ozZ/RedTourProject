@@ -44,6 +44,12 @@ export interface LoginParams {
   password: string
 }
 
+export interface RegisterParams {
+  username: string
+  password: string
+  nickname?: string
+}
+
 // ===== 景点与导览 =====
 export interface SpotInfo {
   id: number
@@ -82,12 +88,25 @@ export interface AskResult {
   audioUrl?: string // useVoice=true 时返回：TTS 语音播报文件地址
 }
 
+// ===== 语音识别 STT（A-11）=====
+/** POST /voice/stt 响应：音频转写文本（multipart 上传，字段名 audio） */
+export interface SttResult {
+  text: string
+}
+
 // ===== 姿态识别（CV）=====
+export interface PoseTriggerContent {
+  title: string // 讲解标题（如：军礼的由来）
+  audioUrl?: string // 讲解音频地址（触摸屏/树莓派播放）
+  wikiRef?: string // 关联 Wiki 条目
+}
+
 export interface PoseResult {
   action: 'salute' | 'mill' | 'wave' | 'unknown' // 敬礼 / 推磨 / 挥手 / 未知
   confidence: number
   keypoints?: number[][] // 关节点坐标
   timestamp: number
+  triggerContent?: PoseTriggerContent | null // 置信度达标时推送的触发讲解内容
 }
 
 // ===== 特产 / 文创 =====
@@ -228,15 +247,30 @@ export interface ProductOrderResult {
   createdAt: string
 }
 
-// ===== 姿态触发内容 =====
-export interface PoseTriggerContent {
-  title: string
-  audioUrl: string
-  wikiRef?: string
+// ===== 姿态单次识别结果（结构与流式 PoseResult 一致）=====
+export type PoseRecognizeResult = PoseResult
+
+// ===== 姿态成就扫码领取（W-T-07）=====
+/** 触摸屏二维码携带的临时 token 解码后的载荷（由后端签发存 Redis，5 分钟有效） */
+export interface PoseClaimTokenPayload {
+  jti: string // token 唯一标识（Redis key）
+  action: string // 触发动作：salute / mill / wave
+  scenicAreaId: number
+  deviceId: string
+  iat: number // 签发时间（毫秒）
+  exp: number // 过期时间（毫秒）
 }
 
-export interface PoseRecognizeResult extends PoseResult {
-  triggerContent?: PoseTriggerContent | null
+/** POST /achievements/claim 请求体 */
+export interface AchievementClaimParams {
+  token: string
+}
+
+/** POST /achievements/claim 响应体 */
+export interface AchievementClaimResult {
+  achievement: Achievement
+  unlockedAt: string // 本次解锁时间（ISO）
+  firstUnlock: boolean // true=首次解锁，false=此前已领取（幂等）
 }
 
 // ===== 知识库 Wiki =====

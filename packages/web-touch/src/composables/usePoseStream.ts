@@ -2,6 +2,7 @@
 // 前端推送 Base64 视频帧，接收 action / confidence / keypoints / triggerContent
 // 断线自动指数退避重连；组件卸载时彻底关闭，避免泄漏
 import { onBeforeUnmount, ref, type Ref } from 'vue'
+import type { PoseTriggerContent } from '@red-tour-project/common'
 
 export interface PoseResult {
   /** 动作标识：salute / mill / wave / unknown（后端也可能返回其它标识，原样透传） */
@@ -10,8 +11,10 @@ export interface PoseResult {
   confidence: number
   /** COCO-17 关键点，归一化坐标 [[x, y], ...]（可能为空表示未检测到人体） */
   keypoints?: number[][]
-  /** 触发讲解内容（confidence ≥ 0.85 时用于全屏特效展示） */
-  triggerContent?: string
+  /** 触发讲解内容（confidence ≥ 0.85 时推送：标题 + 讲解音频 + Wiki 引用） */
+  triggerContent?: PoseTriggerContent | null
+  /** 服务端识别时间戳（毫秒） */
+  timestamp?: number
 }
 
 export type StreamStatus = 'mock' | 'connecting' | 'live' | 'reconnecting'
@@ -77,6 +80,22 @@ export function usePoseStream(opts: UsePoseStreamOptions) {
     }
   }
 
+  // 解析触发讲解内容：契约为对象 { title, audioUrl, wikiRef }；兼容旧版纯字符串
+  function normalizeTrigger(raw: unknown): PoseTriggerContent | null {
+    if (!raw) return null
+    if (typeof raw === 'string') return { title: raw }
+    if (typeof raw === 'object') {
+      const obj = raw as Record<string, unknown>
+      if (typeof obj.title !== 'string') return null
+      return {
+        title: obj.title,
+        audioUrl: typeof obj.audioUrl === 'string' ? obj.audioUrl : undefined,
+        wikiRef: typeof obj.wikiRef === 'string' ? obj.wikiRef : undefined,
+      }
+    }
+    return null
+  }
+
   // 兼容多种响应包裹：裸结果 / {data: 结果} / {type, payload}
   function normalizeResult(raw: unknown): PoseResult | null {
     if (!raw || typeof raw !== 'object') return null
@@ -88,8 +107,8 @@ export function usePoseStream(opts: UsePoseStreamOptions) {
       action: String(inner.action ?? 'unknown'),
       confidence: Number(inner.confidence ?? 0),
       keypoints: Array.isArray(inner.keypoints) ? (inner.keypoints as number[][]) : undefined,
-      triggerContent:
-        typeof inner.triggerContent === 'string' ? inner.triggerContent : undefined,
+      triggerContent: normalizeTrigger(inner.triggerContent),
+      timestamp: typeof inner.timestamp === 'number' ? inner.timestamp : undefined,
     }
   }
 
