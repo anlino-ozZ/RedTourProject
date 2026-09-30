@@ -8,6 +8,7 @@ import { computed, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { mockAchievements, mockTasks, mockScript } from '@/mock/interaction'
 import type { AchievementBadge, InteractionTask } from '@/mock/interaction'
+import { playBadgeShineSound, playLockedSound } from '@/utils/sound'
 
 const router = useRouter()
 
@@ -32,6 +33,19 @@ function onTask(task: InteractionTask) {
   } else {
     showToast('该任务即将上线，敬请期待')
   }
+}
+
+// ===== 徽章详情弹窗 =====
+const selectedBadge = ref<AchievementBadge | null>(null)
+
+function openBadge(badge: AchievementBadge) {
+  selectedBadge.value = badge
+  if (badge.earned) playBadgeShineSound()
+  else playLockedSound()
+}
+
+function closeBadge() {
+  selectedBadge.value = null
 }
 </script>
 
@@ -73,6 +87,10 @@ function onTask(task: InteractionTask) {
           :key="badge.id"
           class="badge"
           :class="{ 'is-earned': badge.earned }"
+          role="button"
+          tabindex="0"
+          @click="openBadge(badge)"
+          @keyup.enter="openBadge(badge)"
         >
           <div
             class="badge__circle"
@@ -133,6 +151,78 @@ function onTask(task: InteractionTask) {
         </div>
       </div>
     </div>
+
+    <!-- ===== 徽章详情弹窗 ===== -->
+    <transition name="badge-fade">
+      <div v-if="selectedBadge" class="badge-modal" @click.self="closeBadge">
+        <div
+          :key="selectedBadge.id"
+          class="badge-modal__card"
+          :class="{ 'is-locked': !selectedBadge.earned }"
+        >
+          <button class="badge-modal__close" aria-label="关闭" @click="closeBadge">×</button>
+
+          <!-- 徽章舞台：旋转光环 + 翻转登场的勋章 + 星光 -->
+          <div class="badge-modal__stage">
+            <span v-if="selectedBadge.earned" class="badge-modal__halo" />
+            <div
+              class="badge-modal__medal"
+              :style="
+                selectedBadge.earned && selectedBadge.color
+                  ? { background: selectedBadge.color }
+                  : undefined
+              "
+            >
+              <svg
+                v-if="selectedBadge.earned"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="#fff"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              >
+                <circle cx="12" cy="8" r="6" />
+                <path d="M15.5 13l1.5 8-5-3-5 3 1.5-8" />
+              </svg>
+              <svg
+                v-else
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              >
+                <rect x="4" y="11" width="16" height="10" rx="2" />
+                <path d="M8 11V7a4 4 0 018 0v4" />
+              </svg>
+            </div>
+            <span v-if="selectedBadge.earned" class="sparkle sparkle--1">✦</span>
+            <span v-if="selectedBadge.earned" class="sparkle sparkle--2">✦</span>
+            <span v-if="selectedBadge.earned" class="sparkle sparkle--3">✧</span>
+          </div>
+
+          <h3 class="badge-modal__name">{{ selectedBadge.name }}</h3>
+          <span
+            class="badge-modal__status"
+            :class="selectedBadge.earned ? 'is-earned' : 'is-locked'"
+          >
+            {{ selectedBadge.earned ? '已解锁' : '未解锁' }}
+          </span>
+          <p class="badge-modal__desc">{{ selectedBadge.desc }}</p>
+
+          <div v-if="selectedBadge.earned" class="badge-modal__time">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="12" cy="12" r="9" />
+              <path d="M12 7v5l3 2" />
+            </svg>
+            获取时间：{{ selectedBadge.earnedAt }}
+          </div>
+          <div v-else class="badge-modal__locked-tip">完成对应任务后即可解锁该徽章</div>
+        </div>
+      </div>
+    </transition>
 
     <!-- 轻提示 -->
     <transition name="fade">
@@ -340,8 +430,15 @@ function onTask(task: InteractionTask) {
   flex-direction: column;
   align-items: center;
   gap: @spacing-sm;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+
+  &:active .badge__circle {
+    transform: scale(0.92);
+  }
 
   &__circle {
+    transition: transform 0.2s;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -434,6 +531,273 @@ function onTask(task: InteractionTask) {
 }
 .fade-enter-from,
 .fade-leave-to {
+  opacity: 0;
+}
+
+// ===== 徽章详情弹窗 =====
+.badge-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 300;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: @spacing-lg;
+  background: rgba(15, 6, 9, 0.72);
+  backdrop-filter: blur(6px);
+  perspective: 1200px;
+
+  &__card {
+    position: relative;
+    width: 100%;
+    max-width: 320px;
+    padding: 28px @spacing-lg 26px;
+    border-radius: 20px;
+    background: linear-gradient(180deg, #fffdf7 0%, #ffffff 55%, #fff8ec 100%);
+    box-shadow:
+      0 20px 60px rgba(0, 0, 0, 0.45),
+      0 0 0 1px rgba(212, 175, 55, 0.25);
+    text-align: center;
+    transform-style: preserve-3d;
+    // 3D 旋转登场：从侧翻 + 缩小回正
+    animation: badge-card-flip-in 0.6s cubic-bezier(0.22, 1.2, 0.36, 1) both;
+
+    &.is-locked {
+      background: linear-gradient(180deg, #f7f7f7 0%, #ffffff 60%, #f2f2f2 100%);
+      box-shadow:
+        0 20px 60px rgba(0, 0, 0, 0.35),
+        0 0 0 1px rgba(0, 0, 0, 0.06);
+    }
+  }
+
+  &__close {
+    position: absolute;
+    top: 10px;
+    right: 12px;
+    width: 30px;
+    height: 30px;
+    border: none;
+    border-radius: 50%;
+    background: rgba(0, 0, 0, 0.05);
+    color: @color-text-secondary;
+    font-size: 20px;
+    line-height: 1;
+    cursor: pointer;
+
+    &:active {
+      transform: scale(0.9);
+    }
+  }
+
+  // 徽章舞台
+  &__stage {
+    position: relative;
+    width: 132px;
+    height: 132px;
+    margin: 6px auto 14px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  // 旋转金色光环
+  &__halo {
+    position: absolute;
+    inset: 0;
+    border-radius: 50%;
+    background: conic-gradient(
+      from 0deg,
+      rgba(212, 175, 55, 0) 0deg,
+      rgba(212, 175, 55, 0.55) 60deg,
+      rgba(255, 236, 170, 0.85) 120deg,
+      rgba(212, 175, 55, 0) 200deg,
+      rgba(212, 175, 55, 0.5) 280deg,
+      rgba(212, 175, 55, 0) 360deg
+    );
+    -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 7px), #000 calc(100% - 6px));
+    mask: radial-gradient(farthest-side, transparent calc(100% - 7px), #000 calc(100% - 6px));
+    animation: badge-halo-spin 3.2s linear infinite;
+  }
+
+  // 勋章本体：翻转一圈后落定，随后轻微悬浮
+  &__medal {
+    position: relative;
+    z-index: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 96px;
+    height: 96px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, #9a9a9a 0%, #cfcfcf 100%);
+    box-shadow:
+      inset 0 2px 6px rgba(255, 255, 255, 0.45),
+      inset 0 -4px 8px rgba(0, 0, 0, 0.18),
+      0 8px 22px rgba(0, 0, 0, 0.25);
+    animation:
+      badge-medal-spin-in 0.75s cubic-bezier(0.3, 1.1, 0.35, 1) 0.08s both,
+      badge-medal-float 2.8s ease-in-out 0.95s infinite;
+
+    svg {
+      width: 44px;
+      height: 44px;
+      filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.25));
+    }
+  }
+
+  &__name {
+    margin: 0 0 8px;
+    font-size: 20px;
+    font-weight: 700;
+    color: #5a4310;
+    letter-spacing: 2px;
+  }
+
+  &__status {
+    display: inline-block;
+    padding: 3px 14px;
+    border-radius: 12px;
+    font-size: @font-size-sm;
+    font-weight: 600;
+
+    &.is-earned {
+      background: rgba(212, 175, 55, 0.16);
+      color: #a07f1c;
+    }
+
+    &.is-locked {
+      background: rgba(0, 0, 0, 0.06);
+      color: @color-text-secondary;
+    }
+  }
+
+  &__desc {
+    margin: 12px 0 0;
+    font-size: @font-size-base;
+    line-height: 1.7;
+    color: @color-text-regular;
+  }
+
+  &__time {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    margin-top: 14px;
+    padding-top: 12px;
+    border-top: 1px dashed rgba(212, 175, 55, 0.45);
+    font-size: @font-size-sm;
+    color: #a07f1c;
+    font-weight: 600;
+
+    svg {
+      width: 15px;
+      height: 15px;
+    }
+  }
+
+  &__locked-tip {
+    margin-top: 14px;
+    padding-top: 12px;
+    border-top: 1px dashed rgba(0, 0, 0, 0.1);
+    font-size: @font-size-sm;
+    color: @color-text-secondary;
+  }
+}
+
+// 星光点缀
+.sparkle {
+  position: absolute;
+  z-index: 2;
+  color: #e8c96a;
+  text-shadow: 0 0 8px rgba(232, 201, 106, 0.8);
+  animation: sparkle-twinkle 1.6s ease-in-out infinite;
+
+  &--1 {
+    top: 6px;
+    right: 14px;
+    font-size: 16px;
+  }
+
+  &--2 {
+    bottom: 12px;
+    left: 8px;
+    font-size: 12px;
+    animation-delay: 0.45s;
+  }
+
+  &--3 {
+    top: 18px;
+    left: 18px;
+    font-size: 10px;
+    animation-delay: 0.9s;
+  }
+}
+
+@keyframes badge-card-flip-in {
+  0% {
+    opacity: 0;
+    transform: rotateY(-85deg) rotateX(18deg) scale(0.7);
+  }
+  60% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 1;
+    transform: rotateY(0) rotateX(0) scale(1);
+  }
+}
+
+@keyframes badge-medal-spin-in {
+  0% {
+    opacity: 0;
+    transform: rotateY(180deg) scale(0.4);
+  }
+  55% {
+    opacity: 1;
+    transform: rotateY(-20deg) scale(1.12);
+  }
+  100% {
+    opacity: 1;
+    transform: rotateY(0) scale(1);
+  }
+}
+
+@keyframes badge-medal-float {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-5px);
+  }
+}
+
+@keyframes badge-halo-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes sparkle-twinkle {
+  0%,
+  100% {
+    opacity: 0.2;
+    transform: scale(0.7) rotate(0deg);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.15) rotate(25deg);
+  }
+}
+
+// 遮罩淡入淡出
+.badge-fade-enter-active,
+.badge-fade-leave-active {
+  transition: opacity 0.25s;
+}
+.badge-fade-enter-from,
+.badge-fade-leave-to {
   opacity: 0;
 }
 </style>

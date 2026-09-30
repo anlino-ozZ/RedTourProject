@@ -8,6 +8,7 @@
 import { ref, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { RedButton } from '@red-tour-project/common'
+import { playCorrectSound, playWrongSound } from '@/utils/sound'
 
 const router = useRouter()
 
@@ -41,11 +42,16 @@ function goBack() {
 function onSubmit() {
   if (loading.value) return
   if (!username.value || !password.value) return
-  if (isRegister.value && password.value !== confirmPassword.value) return
+  if (isRegister.value && password.value !== confirmPassword.value) {
+    playWrongSound()
+    return
+  }
   loading.value = true
   // UI 占位：模拟提交，后续替换为真实接口
   setTimeout(() => {
     loading.value = false
+    // 登录/注册成功：上行琶音后再跳转
+    playCorrectSound()
     router.push('/')
   }, 600)
 }

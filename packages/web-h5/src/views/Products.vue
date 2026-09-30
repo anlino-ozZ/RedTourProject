@@ -8,6 +8,7 @@ import {
   type Product,
   type ProductCategory,
 } from '@/mock/product'
+import { playCorrectSound, playWrongSound } from '@/utils/sound'
 
 type CategoryFilter = 'all' | ProductCategory
 
@@ -135,7 +136,12 @@ function validate(): boolean {
 }
 
 function submitOrder() {
-  if (submitting.value || !validate()) return
+  if (submitting.value) return
+  if (!validate()) {
+    // 校验失败：低沉下行音提示修正
+    playWrongSound()
+    return
+  }
   submitting.value = true
   // mock 提交：模拟网络耗时并防止重复提交（H-07 替换为真实接口）
   window.setTimeout(() => {
@@ -150,6 +156,8 @@ function submitOrder() {
       createdAt: now.toLocaleString(),
     }
     submitting.value = false
+    // 登记成功：上行琶音正反馈
+    playCorrectSound()
   }, 600)
 }
 </script>

@@ -370,6 +370,26 @@ const hotQuestions: HotQuestion[] = [
 .home {
   overflow-x: hidden; // 防止负 margin 导致的横向溢出
 
+  // 首屏四个区块错峰淡入上浮（Banner → 四宫格 → 热门景点 → 大家都在问）
+  > * {
+    animation: home-rise 0.45s cubic-bezier(0.22, 0.8, 0.36, 1) both;
+  }
+  > *:nth-child(2) {
+    animation-delay: 0.06s;
+  }
+  > *:nth-child(3) {
+    animation-delay: 0.12s;
+  }
+  > *:nth-child(4) {
+    animation-delay: 0.18s;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    > * {
+      animation: none;
+    }
+  }
+
   // ===== 顶部 Banner 轮播 =====
   &__banner {
     position: relative;
@@ -663,6 +683,18 @@ const hotQuestions: HotQuestion[] = [
     font-size: @font-size-sm;
     color: #e0552b;
     font-weight: 600;
+  }
+}
+
+// 首屏区块入场：下移 14px + 透明 → 归位
+@keyframes home-rise {
+  from {
+    opacity: 0;
+    transform: translateY(14px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
   }
 }
 </style>

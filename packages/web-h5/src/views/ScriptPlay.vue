@@ -9,6 +9,13 @@ import { computed, onUnmounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { mockScript } from '@/mock/interaction'
 import type { ScriptTask } from '@/mock/interaction'
+import {
+  playCorrectSound,
+  playFanfareSound,
+  playScoreSound,
+  playTapSound,
+  playWrongSound,
+} from '@/utils/sound'
 
 const router = useRouter()
 
@@ -46,29 +53,46 @@ function showToast(text: string) {
   toastTimer = setTimeout(() => (toastText.value = ''), 1800)
 }
 
-// ===== 打字机（开场/结局共用） =====
+// ===== 打字机（开场/结局共用，打字中点击可一键展开） =====
 const displayedText = ref('')
 const isTyping = ref(false)
 let typeTimer: ReturnType<typeof setInterval> | undefined
+let typeFullText = ''
+let typeDoneCb: (() => void) | undefined
+
 function typewriter(text: string, done?: () => void) {
   displayedText.value = ''
   isTyping.value = true
+  typeFullText = text
+  typeDoneCb = done
   let i = 0
   if (typeTimer) clearInterval(typeTimer)
   typeTimer = setInterval(() => {
     i++
     displayedText.value = text.slice(0, i)
-    if (i >= text.length) {
-      clearInterval(typeTimer)
-      isTyping.value = false
-      done?.()
-    }
+    if (i >= text.length) finishTyping()
   }, 40)
+}
+
+/** 立即补全剩余文字并触发完成回调（快进/一键展开） */
+function finishTyping() {
+  if (typeTimer) clearInterval(typeTimer)
+  displayedText.value = typeFullText
+  isTyping.value = false
+  const cb = typeDoneCb
+  typeDoneCb = undefined
+  cb?.()
+}
+
+/** 打字过程中点击剧情文本：直接展开全部 */
+function onDialogTap() {
+  if (isTyping.value) finishTyping()
 }
 
 // ===== 选择角色 =====
 function pickRole(id: string) {
   roleId.value = id
+  playTapSound()
 }
 
 function startScript() {
@@ -93,16 +117,19 @@ const checkinState = ref<'idle' | 'locating' | 'done'>('idle')
 // 积分飘字
 const flyPoints = ref('')
 
-function flyup(points: number) {
+// ===== 音效：统一使用 @/utils/sound 合成（无需音频素材）=====
+
+function flyup(points: number, soundDelaySec = 0) {
   score.value += points
   flyPoints.value = `+${points} 积分`
+  playScoreSound(soundDelaySec)
   setTimeout(() => (flyPoints.value = ''), 1200)
 }
 
 /** 任务完成 → 推进剧情 + 获得积分；所有任务完成 → 结局 */
-function completeTask() {
+function completeTask(scoreDelaySec = 0) {
   const task = currentTask.value
-  flyup(task.points)
+  flyup(task.points, scoreDelaySec)
   showToast(`任务完成，剧情推进！`)
   setTimeout(() => {
     // 重置本任务状态
@@ -138,10 +165,13 @@ function pickQuiz(i: number) {
   const quiz = currentTask.value.quiz!
   if (i === quiz.answer) {
     quizCorrect.value = true
-    completeTask()
+    playCorrectSound()
+    // 答对琶音播完后再响积分音，避免叠音浑浊
+    completeTask(0.34)
   } else {
     quizWrong.value = true
     showGuide.value = true
+    playWrongSound()
     showToast('答错了，看看引导提示再试一次')
   }
 }
@@ -162,14 +192,18 @@ const collected = ref(false)
 function toReward() {
   if (isTyping.value) return
   stage.value = 'reward'
+  // 徽章解锁号角
+  playFanfareSound()
 }
 
 function onShare() {
+  playTapSound()
   showToast('分享海报已生成，快去发给小伙伴吧')
 }
 
 function onCollect() {
   collected.value = !collected.value
+  playTapSound()
   showToast(collected.value ? '已收藏剧本' : '已取消收藏')
 }
 
@@ -251,7 +285,21 @@ onUnmounted(() => {
           </span>
           <span class="dialog-card__speaker">剧情开场</span>
         </div>
-        <p class="dialog-card__text">{{ displayedText }}<i v-if="isTyping" class="cursor" /></p>
+        <p
+          class="dialog-card__text"
+          :class="{ 'is-skippable': isTyping }"
+          @click="onDialogTap"
+        >
+          {{ displayedText }}<i v-if="isTyping" class="cursor" />
+        </p>
+        <button
+          v-if="isTyping"
+          class="dialog-card__skip"
+          type="button"
+          @click="onDialogTap"
+        >
+          点击一键展开 ▶
+        </button>
       </div>
       <button class="primary-btn" :disabled="isTyping" @click="stage = 'tasks'">
         开始第一个任务
@@ -344,7 +392,21 @@ onUnmounted(() => {
           </span>
           <span class="dialog-card__speaker">结局 · 情报送达</span>
         </div>
-        <p class="dialog-card__text">{{ displayedText }}<i v-if="isTyping" class="cursor" /></p>
+        <p
+          class="dialog-card__text"
+          :class="{ 'is-skippable': isTyping }"
+          @click="onDialogTap"
+        >
+          {{ displayedText }}<i v-if="isTyping" class="cursor" />
+        </p>
+        <button
+          v-if="isTyping"
+          class="dialog-card__skip"
+          type="button"
+          @click="onDialogTap"
+        >
+          点击一键展开 ▶
+        </button>
       </div>
       <button class="primary-btn" :disabled="isTyping" @click="toReward">查看通关奖励</button>
     </div>
@@ -660,6 +722,11 @@ onUnmounted(() => {
     line-height: 1.8;
     color: @color-text-primary;
 
+    // 打字过程中整块文本可点击快进
+    &.is-skippable {
+      cursor: pointer;
+    }
+
     .cursor {
       display: inline-block;
       width: 2px;
@@ -669,6 +736,18 @@ onUnmounted(() => {
       vertical-align: -2px;
       animation: blink 0.8s step-end infinite;
     }
+  }
+
+  &__skip {
+    display: block;
+    margin: @spacing-xs 0 0;
+    padding: 0;
+    border: none;
+    background: transparent;
+    text-align: right;
+    font-size: @font-size-sm;
+    color: @color-primary;
+    cursor: pointer;
   }
 }
 

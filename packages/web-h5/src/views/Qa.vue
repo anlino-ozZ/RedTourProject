@@ -17,6 +17,7 @@ import {
   saveSession,
   type QaMessage,
 } from '@/utils/qaStorage'
+import { playScoreSound, playTapSound } from '@/utils/sound'
 
 const router = useRouter()
 const route = useRoute()
@@ -72,10 +73,14 @@ function persist(firstQuestion?: string) {
   })
 }
 
-/** 提问：推入用户消息 → AI 打字机回答 */
-function ask(raw?: string) {
+/**
+ * 提问：推入用户消息 → AI 打字机回答
+ * @param silent 路由带入问题等非用户手势触发时不播放发送音
+ */
+function ask(raw?: string, silent = false) {
   const text = (raw ?? inputText.value).trim()
   if (!text || typing.value) return
+  if (!silent) playTapSound()
 
   if (!sessionId.value) sessionId.value = createSessionId()
   const isFirstQuestion = !messages.value.some((m) => m.role === 'user')
@@ -105,6 +110,8 @@ function ask(raw?: string) {
         aiMsg.source = answer.source?.title
         typing.value = false
         persist(isFirstQuestion ? text : undefined)
+        // AI 回答输出完成：柔和"叮咚"提示可读
+        playScoreSound()
         scrollToBottom()
       }
     }, 30)
@@ -152,7 +159,8 @@ onMounted(() => {
   // 从首页"大家都在问"等入口带入问题
   const q = route.query.q
   if (typeof q === 'string' && q.trim()) {
-    ask(q.trim())
+    // 路由带入的问题非用户手势触发，不播发送音
+    ask(q.trim(), true)
   }
 
   window.visualViewport?.addEventListener('resize', onViewportChange)

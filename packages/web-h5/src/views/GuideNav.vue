@@ -14,6 +14,7 @@ import {
   type GuideRoute,
   type GuideSpot,
 } from '@/mock/guide'
+import { playScoreSound, playTapSound } from '@/utils/sound'
 
 const route = useRoute()
 const router = useRouter()
@@ -67,6 +68,8 @@ let timer: ReturnType<typeof setInterval> | undefined
 function startNav() {
   if (navigating.value) return
   navigating.value = true
+  // 用户手势内轻触音，同时解锁后续"到达景点"的自动播报音
+  playTapSound()
   startTicker()
 }
 function pauseNav() {
@@ -84,9 +87,10 @@ function startTicker() {
     progress.value += 0.015
     if (progress.value >= 1) {
       progress.value = 0
-      // 到达当前景点：打卡 + 弹出讲解
+      // 到达当前景点：打卡 + 弹出讲解 + 到达提示音
       stampMap.value[currentSpot.value!.id] = true
       lectureVisible.value = true
+      playScoreSound()
       stopTicker()
     }
   }, 300)
