@@ -15,6 +15,7 @@ import {
   type GuideRoute,
   type InterestTag,
 } from '@/mock/guide'
+import { playCorrectSound } from '@/utils/sound'
 
 const router = useRouter()
 
@@ -70,6 +71,8 @@ async function generate() {
   })
   aiGenerating.value = false
   aiReady.value = true
+  // AI 路线生成完成：上行琶音正反馈（上下文已在点击"生成"时解锁）
+  playCorrectSound()
 }
 
 function startGuide() {

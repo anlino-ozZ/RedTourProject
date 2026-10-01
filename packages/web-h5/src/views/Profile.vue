@@ -9,9 +9,35 @@ import {
   type MedalItem,
   type OrderItem,
 } from '@/mock/profile'
+import UserAvatar from '@/components/UserAvatar.vue'
+import {
+  AVATAR_PRESETS,
+  fileToAvatarDataUrl,
+  getProfile,
+  getSettings,
+  saveProfile,
+  saveSettings,
+  type AppSettings,
+  type FontScale,
+  type UserProfile,
+} from '@/utils/profileStorage'
+import { applyFontScale } from '@/utils/fontScale'
+import { clearSessions, listSessions } from '@/utils/qaStorage'
+import { playCorrectSound, playTapSound, playWrongSound } from '@/utils/sound'
 
 const router = useRouter()
-const user = mockUser
+
+// ===== 本地资料 & 设置（账号体系接入前仅存本机）=====
+const profile = ref<UserProfile>(getProfile())
+const settings = ref<AppSettings>(getSettings())
+
+/** 头部展示用户：mock 的等级/统计不变，昵称/签名/头像用本地资料覆盖 */
+const user = computed(() => ({
+  ...mockUser,
+  nickname: profile.value.nickname,
+  slogan: profile.value.slogan,
+}))
+
 const medals = mockMedals
 const footprintGroups = mockFootprints
 const orders = ref(mockOrders)
@@ -40,7 +66,7 @@ const filteredOrders = computed(() =>
     : orders.value.filter((o) => o.status === activeTab.value),
 )
 
-const allStats = computed(() => user.stats)
+const allStats = computed(() => user.value.stats)
 
 function onFootprintAction(to?: string) {
   if (to) router.push(to)
@@ -51,13 +77,157 @@ function medalColor(m: MedalItem) {
   return m.color ?? '#c41e3a'
 }
 
+// ===== 设置面板（底部弹层，内含资料编辑子视图）=====
+type PanelView = 'main' | 'avatar' | 'nickname' | 'slogan' | 'font'
+
+const FONT_OPTIONS: { key: FontScale; label: string; desc: string }[] = [
+  { key: 'normal', label: '标准', desc: '默认字号' },
+  { key: 'large', label: '大号', desc: '放大 12%' },
+  { key: 'xlarge', label: '特大', desc: '放大 25%' },
+]
+
+function fontLabelOf(key: FontScale): string {
+  return FONT_OPTIONS.find((o) => o.key === key)?.label ?? '标准'
+}
+const panelVisible = ref(false)
+const panelView = ref<PanelView>('main')
+const toastText = ref('')
+let toastTimer: ReturnType<typeof setTimeout> | null = null
+
+function showToast(text: string) {
+  toastText.value = text
+  if (toastTimer) clearTimeout(toastTimer)
+  toastTimer = setTimeout(() => (toastText.value = ''), 1800)
+}
+
 function onSettings() {
-  // TODO: 接入设置页
-  router.push('/profile')
+  panelView.value = 'main'
+  panelVisible.value = true
+  playTapSound()
+}
+
+function closePanel() {
+  panelVisible.value = false
+}
+
+function openView(v: PanelView) {
+  if (v === 'nickname') {
+    editNick.value = profile.value.nickname
+    nickError.value = ''
+  } else if (v === 'slogan') {
+    editSlogan.value = profile.value.slogan
+    sloganError.value = ''
+  }
+  panelView.value = v
+  playTapSound()
+}
+
+// ===== 昵称 / 签名编辑 =====
+const NICK_MAX = 12
+const SLOGAN_MAX = 20
+const editNick = ref(profile.value.nickname)
+const nickError = ref('')
+const editSlogan = ref(profile.value.slogan)
+const sloganError = ref('')
+
+function saveNickname() {
+  const v = editNick.value.trim()
+  if (!v) {
+    nickError.value = '昵称不能为空'
+    playWrongSound()
+    return
+  }
+  if (v.length > NICK_MAX) {
+    nickError.value = `昵称最多 ${NICK_MAX} 个字`
+    playWrongSound()
+    return
+  }
+  profile.value = saveProfile({ nickname: v })
+  playCorrectSound()
+  panelView.value = 'main'
+}
+
+function saveSlogan() {
+  const v = editSlogan.value.trim()
+  if (v.length > SLOGAN_MAX) {
+    sloganError.value = `个性签名最多 ${SLOGAN_MAX} 个字`
+    playWrongSound()
+    return
+  }
+  profile.value = saveProfile({ slogan: v || '这个人很神秘，什么都没留下' })
+  playCorrectSound()
+  panelView.value = 'main'
+}
+
+// ===== 头像选择：预设 + 本地相册 =====
+const avatarPresets = AVATAR_PRESETS
+const fileInput = ref<HTMLInputElement | null>(null)
+const uploadingAvatar = ref(false)
+
+function pickPreset(i: number) {
+  if (profile.value.presetIndex === i && !profile.value.avatar) return
+  profile.value = saveProfile({ presetIndex: i, avatar: '' })
+  playCorrectSound()
+}
+
+function triggerUpload() {
+  playTapSound()
+  fileInput.value?.click()
+}
+
+async function onFileChange(e: Event) {
+  const input = e.target as HTMLInputElement
+  const file = input.files?.[0]
+  if (!file) return
+  uploadingAvatar.value = true
+  try {
+    const dataUrl = await fileToAvatarDataUrl(file)
+    profile.value = saveProfile({ avatar: dataUrl })
+    playCorrectSound()
+    showToast('头像已更新')
+  } catch (err) {
+    showToast(err instanceof Error ? err.message : '头像设置失败')
+    playWrongSound()
+  } finally {
+    uploadingAvatar.value = false
+    // 清空 value 才能重复选择同一文件
+    input.value = ''
+  }
+}
+
+// ===== 通用设置 =====
+function toggleSound() {
+  const next = !settings.value.soundEnabled
+  settings.value = saveSettings({ soundEnabled: next })
+  // 打开时给一次即时反馈；关闭时自然静音
+  if (next) playCorrectSound()
+}
+
+/** 切换字体档位：立即对整站生效并持久化，刷新后保持 */
+function pickFont(key: FontScale) {
+  if (settings.value.fontScale === key) return
+  settings.value = saveSettings({ fontScale: key })
+  applyFontScale(key)
+  playCorrectSound()
+}
+
+const qaCount = computed(() => listSessions().length)
+
+function clearQaHistory() {
+  if (qaCount.value === 0) {
+    showToast('暂无问答历史')
+    return
+  }
+  if (window.confirm(`确定清空全部 ${qaCount.value} 条问答历史吗？此操作不可恢复。`)) {
+    clearSessions()
+    showToast('问答历史已清空')
+    playTapSound()
+  }
 }
 
 function onLogout() {
   // TODO: 接入登出接口 / 清 token
+  panelVisible.value = false
   router.push('/auth')
 }
 </script>
@@ -85,9 +255,7 @@ function onLogout() {
       </div>
       <div class="profile__user">
         <div class="profile__avatar">
-          <svg viewBox="0 0 24 24" fill="currentColor">
-            <path d="M12 12a5 5 0 100-10 5 5 0 000 10zm0 2c-4.42 0-8 2.24-8 5v1h16v-1c0-2.76-3.58-5-8-5z" />
-          </svg>
+          <UserAvatar :profile="profile" :size="52" />
         </div>
         <div class="profile__user-info">
           <div class="profile__nickname">{{ user.nickname }}</div>
@@ -217,6 +385,213 @@ function onLogout() {
         </div>
       </div>
     </section>
+
+    <!-- ===== 设置底部弹层 ===== -->
+    <Transition name="pf-fade">
+      <div v-if="panelVisible" class="pf-overlay" @click.self="closePanel">
+        <div class="pf-sheet" role="dialog" aria-modal="true" aria-label="设置">
+          <!-- 主设置 -->
+          <template v-if="panelView === 'main'">
+            <div class="pf-sheet__head">
+              <span class="pf-sheet__title">设置</span>
+              <button class="pf-sheet__close" aria-label="关闭" @click="closePanel">×</button>
+            </div>
+
+            <div class="pf-group">
+              <div class="pf-group__label">个人资料</div>
+              <div class="pf-row" role="button" tabindex="0" @click="openView('avatar')" @keyup.enter="openView('avatar')">
+                <span class="pf-row__label">头像</span>
+                <span class="pf-row__right">
+                  <UserAvatar :profile="profile" :size="38" />
+                  <span class="pf-row__chevron">›</span>
+                </span>
+              </div>
+              <div class="pf-row" role="button" tabindex="0" @click="openView('nickname')" @keyup.enter="openView('nickname')">
+                <span class="pf-row__label">昵称</span>
+                <span class="pf-row__right">
+                  <span class="pf-row__value">{{ profile.nickname }}</span>
+                  <span class="pf-row__chevron">›</span>
+                </span>
+              </div>
+              <div class="pf-row" role="button" tabindex="0" @click="openView('slogan')" @keyup.enter="openView('slogan')">
+                <span class="pf-row__label">个性签名</span>
+                <span class="pf-row__right">
+                  <span class="pf-row__value pf-row__value--ellipsis">{{ profile.slogan }}</span>
+                  <span class="pf-row__chevron">›</span>
+                </span>
+              </div>
+            </div>
+
+            <div class="pf-group">
+              <div class="pf-group__label">通用</div>
+              <div class="pf-row">
+                <span class="pf-row__label">音效</span>
+                <button
+                  class="pf-switch"
+                  :class="{ 'is-on': settings.soundEnabled }"
+                  role="switch"
+                  :aria-checked="settings.soundEnabled"
+                  :aria-label="settings.soundEnabled ? '关闭音效' : '开启音效'"
+                  @click="toggleSound"
+                >
+                  <i />
+                </button>
+              </div>
+              <div class="pf-row" role="button" tabindex="0" @click="openView('font')" @keyup.enter="openView('font')">
+                <span class="pf-row__label">字体大小</span>
+                <span class="pf-row__right">
+                  <span class="pf-row__hint">{{ fontLabelOf(settings.fontScale) }}</span>
+                  <span class="pf-row__chevron">›</span>
+                </span>
+              </div>
+              <div class="pf-row" role="button" tabindex="0" @click="clearQaHistory" @keyup.enter="clearQaHistory">
+                <span class="pf-row__label">清除问答历史</span>
+                <span class="pf-row__right">
+                  <span class="pf-row__hint">{{ qaCount }} 条</span>
+                  <span class="pf-row__chevron">›</span>
+                </span>
+              </div>
+              <div class="pf-row pf-row--danger" role="button" tabindex="0" @click="onLogout" @keyup.enter="onLogout">
+                <span class="pf-row__label">退出登录</span>
+                <span class="pf-row__chevron">›</span>
+              </div>
+            </div>
+
+            <div class="pf-version">红色文旅 v0.1.0</div>
+          </template>
+
+          <!-- 头像选择 -->
+          <template v-else-if="panelView === 'avatar'">
+            <div class="pf-sheet__head">
+              <button class="pf-sheet__back" aria-label="返回" @click="openView('main')">‹</button>
+              <span class="pf-sheet__title">更换头像</span>
+              <span class="pf-sheet__spacer" />
+            </div>
+            <div class="pf-avatar-grid">
+              <button
+                v-for="(p, i) in avatarPresets"
+                :key="i"
+                type="button"
+                class="pf-avatar-cell"
+                :class="{ 'is-active': !profile.avatar && profile.presetIndex === i }"
+                @click="pickPreset(i)"
+              >
+                <UserAvatar :profile="{ avatar: '', presetIndex: i }" :size="56" />
+              </button>
+              <button
+                type="button"
+                class="pf-avatar-cell pf-avatar-upload"
+                :disabled="uploadingAvatar"
+                @click="triggerUpload"
+              >
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"
+                  stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M23 19a2 2 0 01-2 2H3a2 2 0 01-2-2V8a2 2 0 012-2h4l2-3h6l2 3h4a2 2 0 012 2z" />
+                  <circle cx="12" cy="13" r="4" />
+                </svg>
+                <span>{{ uploadingAvatar ? '处理中…' : '相册选择' }}</span>
+              </button>
+            </div>
+            <p class="pf-tip">选择预设头像，或从相册上传图片（自动居中裁剪）</p>
+            <input
+              ref="fileInput"
+              type="file"
+              accept="image/*"
+              class="pf-hidden-file"
+              @change="onFileChange"
+            />
+          </template>
+
+          <!-- 修改昵称 -->
+          <template v-else-if="panelView === 'nickname'">
+            <div class="pf-sheet__head">
+              <button class="pf-sheet__back" aria-label="返回" @click="openView('main')">‹</button>
+              <span class="pf-sheet__title">修改昵称</span>
+              <span class="pf-sheet__spacer" />
+            </div>
+            <div class="pf-form">
+              <div class="pf-input-wrap">
+                <input
+                  v-model="editNick"
+                  class="pf-input"
+                  type="text"
+                  maxlength="12"
+                  placeholder="请输入昵称"
+                  @keyup.enter="saveNickname"
+                />
+                <span class="pf-input-count">{{ editNick.length }}/{{ NICK_MAX }}</span>
+              </div>
+              <p v-if="nickError" class="pf-error">{{ nickError }}</p>
+              <button type="button" class="pf-primary" @click="saveNickname">保存</button>
+            </div>
+          </template>
+
+          <!-- 修改个性签名 -->
+          <template v-else-if="panelView === 'slogan'">
+            <div class="pf-sheet__head">
+              <button class="pf-sheet__back" aria-label="返回" @click="openView('main')">‹</button>
+              <span class="pf-sheet__title">个性签名</span>
+              <span class="pf-sheet__spacer" />
+            </div>
+            <div class="pf-form">
+              <div class="pf-input-wrap pf-input-wrap--col">
+                <textarea
+                  v-model="editSlogan"
+                  class="pf-textarea"
+                  maxlength="20"
+                  rows="3"
+                  placeholder="写一句介绍自己的话吧"
+                />
+                <span class="pf-input-count">{{ editSlogan.length }}/{{ SLOGAN_MAX }}</span>
+              </div>
+              <p v-if="sloganError" class="pf-error">{{ sloganError }}</p>
+              <button type="button" class="pf-primary" @click="saveSlogan">保存</button>
+            </div>
+          </template>
+
+          <!-- 字体大小（适老模式）-->
+          <template v-else>
+            <div class="pf-sheet__head">
+              <button class="pf-sheet__back" aria-label="返回" @click="openView('main')">‹</button>
+              <span class="pf-sheet__title">字体大小</span>
+              <span class="pf-sheet__spacer" />
+            </div>
+
+            <!-- 预览：随当前档位实时放大，方便老年用户直观对比 -->
+            <div class="pf-font-preview">
+              <div class="pf-font-preview__title">预览效果</div>
+              <div class="pf-font-preview__body">
+                欢迎来到红色文旅，开启您的研学之旅。
+              </div>
+              <div class="pf-font-preview__small">智能导览 · AI 问答 · 红色剧本</div>
+            </div>
+
+            <div class="pf-font-options">
+              <button
+                v-for="o in FONT_OPTIONS"
+                :key="o.key"
+                type="button"
+                class="pf-font-option"
+                :class="{ 'is-active': settings.fontScale === o.key }"
+                @click="pickFont(o.key)"
+              >
+                <span class="pf-font-option__label" :class="`pf-font-option__label--${o.key}`">
+                  A
+                </span>
+                <span class="pf-font-option__name">{{ o.label }}</span>
+                <span class="pf-font-option__desc">{{ o.desc }}</span>
+              </button>
+            </div>
+            <p class="pf-tip">大号/特大字将整体放大页面内容，设置后对所有页面生效</p>
+          </template>
+        </div>
+
+        <!-- 轻提示 -->
+        <Transition name="pf-toast">
+          <div v-if="toastText" class="pf-toast">{{ toastText }}</div>
+        </Transition>
+      </div>
+    </Transition>
   </div>
 </template>
 
@@ -655,5 +1030,440 @@ function onLogout() {
     font-size: 16px;
     line-height: 1;
   }
+}
+
+// ===== 设置底部弹层 =====
+.pf-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  background: rgba(0, 0, 0, 0.5);
+  backdrop-filter: blur(2px);
+}
+
+.pf-sheet {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  max-height: 82%;
+  overflow-y: auto;
+  background: @color-bg-page;
+  border-radius: 20px 20px 0 0;
+  padding: 0 @spacing-md calc(@spacing-md + env(safe-area-inset-bottom));
+  animation: pf-sheet-in 0.28s cubic-bezier(0.22, 0.8, 0.36, 1);
+}
+
+@keyframes pf-sheet-in {
+  from {
+    transform: translateY(100%);
+  }
+  to {
+    transform: translateY(0);
+  }
+}
+
+.pf-fade-enter-active,
+.pf-fade-leave-active {
+  transition: opacity 0.25s;
+}
+.pf-fade-enter-from,
+.pf-fade-leave-to {
+  opacity: 0;
+}
+
+.pf-sheet__head {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: @spacing-md 0;
+  background: @color-bg-page;
+}
+
+.pf-sheet__title {
+  font-size: 17px;
+  font-weight: 700;
+  color: @color-text-primary;
+}
+
+.pf-sheet__close,
+.pf-sheet__back {
+  width: 32px;
+  height: 32px;
+  border: none;
+  border-radius: 50%;
+  background: #f0f0f2;
+  color: @color-text-regular;
+  font-size: 20px;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+
+  &:active {
+    background: #e4e4e8;
+  }
+}
+
+.pf-sheet__spacer {
+  width: 32px;
+}
+
+// 分组与行
+.pf-group {
+  background: @color-bg-card;
+  border-radius: @radius-lg;
+  margin-bottom: @spacing-md;
+  overflow: hidden;
+}
+
+.pf-group__label {
+  font-size: @font-size-sm;
+  color: @color-text-secondary;
+  padding: @spacing-sm @spacing-md 0;
+}
+
+.pf-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: @spacing-md;
+  padding: @spacing-md;
+  cursor: pointer;
+  min-height: 56px;
+  box-sizing: border-box;
+
+  & + & {
+    border-top: 1px solid #f5f5f7;
+  }
+  &:active {
+    background: #fafafc;
+  }
+
+  &__label {
+    font-size: @font-size-lg;
+    color: @color-text-primary;
+  }
+
+  &__right {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+  }
+
+  &__value {
+    font-size: @font-size-base;
+    color: @color-text-secondary;
+    max-width: 180px;
+  }
+
+  &__value--ellipsis {
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+  }
+
+  &__hint {
+    font-size: @font-size-sm;
+    color: @color-text-secondary;
+  }
+
+  &__chevron {
+    color: #c0c0c6;
+    font-size: 20px;
+    line-height: 1;
+  }
+
+  &--danger &__label {
+    color: @color-primary;
+  }
+}
+
+// 开关
+.pf-switch {
+  width: 46px;
+  height: 26px;
+  border-radius: 13px;
+  border: none;
+  padding: 2px;
+  background: #d8d8dd;
+  display: flex;
+  align-items: center;
+  cursor: pointer;
+  transition: background 0.2s;
+
+  i {
+    display: block;
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    background: #fff;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+    transition: transform 0.2s;
+  }
+
+  &.is-on {
+    background: @color-primary;
+    i {
+      transform: translateX(20px);
+    }
+  }
+}
+
+.pf-version {
+  text-align: center;
+  font-size: @font-size-sm;
+  color: @color-text-secondary;
+  padding: @spacing-sm 0;
+}
+
+// 头像选择
+.pf-avatar-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: @spacing-md @spacing-sm;
+  padding: @spacing-sm 0 @spacing-md;
+}
+
+.pf-avatar-cell {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: @spacing-sm 0;
+  border: 2px solid transparent;
+  border-radius: @radius-lg;
+  background: @color-bg-card;
+  cursor: pointer;
+  font-size: @font-size-sm;
+  color: @color-text-secondary;
+  transition: border-color 0.15s, transform 0.15s;
+
+  &:active {
+    transform: scale(0.95);
+  }
+
+  &.is-active {
+    border-color: @color-primary;
+    color: @color-primary;
+    font-weight: 600;
+  }
+
+  svg {
+    width: 26px;
+    height: 26px;
+  }
+}
+
+.pf-avatar-upload {
+  color: @color-primary;
+  border-style: dashed;
+  border-color: fade(@color-primary, 35%);
+
+  &:disabled {
+    opacity: 0.6;
+  }
+}
+
+.pf-tip {
+  margin: 0 0 @spacing-sm;
+  font-size: @font-size-sm;
+  color: @color-text-secondary;
+  text-align: center;
+}
+
+// 字体大小预览与选项
+.pf-font-preview {
+  background: @color-bg-card;
+  border-radius: @radius-lg;
+  padding: @spacing-md;
+  margin-bottom: @spacing-md;
+  box-shadow: @shadow-card;
+
+  &__title {
+    font-size: @font-size-sm;
+    color: @color-text-secondary;
+    margin-bottom: @spacing-sm;
+  }
+
+  &__body {
+    font-size: @font-size-lg;
+    line-height: 1.6;
+    color: @color-text-primary;
+  }
+
+  &__small {
+    margin-top: @spacing-xs;
+    font-size: @font-size-sm;
+    color: @color-text-secondary;
+  }
+}
+
+.pf-font-options {
+  display: flex;
+  gap: @spacing-sm;
+  margin-bottom: @spacing-sm;
+}
+
+.pf-font-option {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: @spacing-md @spacing-sm;
+  border: 2px solid #f0f0f0;
+  border-radius: @radius-lg;
+  background: @color-bg-card;
+  cursor: pointer;
+  transition: border-color 0.15s, transform 0.15s;
+
+  &:active {
+    transform: scale(0.96);
+  }
+
+  &.is-active {
+    border-color: @color-primary;
+    background: @color-primary-light;
+  }
+
+  &__label {
+    line-height: 1;
+    color: @color-primary;
+    font-weight: 700;
+
+    &--normal {
+      font-size: 16px;
+    }
+    &--large {
+      font-size: 20px;
+    }
+    &--xlarge {
+      font-size: 24px;
+    }
+  }
+
+  &__name {
+    font-size: @font-size-lg;
+    font-weight: 600;
+    color: @color-text-primary;
+  }
+
+  &__desc {
+    font-size: @font-size-sm;
+    color: @color-text-secondary;
+    white-space: nowrap;
+  }
+}
+
+.pf-hidden-file {
+  display: none;
+}
+
+// 表单
+.pf-form {
+  padding: @spacing-sm 0 @spacing-md;
+}
+
+.pf-input-wrap {
+  display: flex;
+  align-items: center;
+  gap: @spacing-sm;
+  background: @color-bg-card;
+  border: 1px solid #f0f0f0;
+  border-radius: @radius-base;
+  padding: 0 @spacing-md;
+
+  &--col {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 4px;
+    padding: @spacing-sm @spacing-md;
+  }
+
+  &:focus-within {
+    border-color: fade(@color-primary, 50%);
+  }
+}
+
+.pf-input {
+  flex: 1;
+  height: 46px;
+  border: none;
+  outline: none;
+  background: transparent;
+  font-size: @font-size-lg;
+  color: @color-text-primary;
+}
+
+.pf-textarea {
+  border: none;
+  outline: none;
+  resize: none;
+  background: transparent;
+  font-size: @font-size-lg;
+  line-height: 1.5;
+  color: @color-text-primary;
+  font-family: inherit;
+  width: 100%;
+}
+
+.pf-input-count {
+  flex-shrink: 0;
+  font-size: @font-size-sm;
+  color: @color-text-secondary;
+}
+
+.pf-error {
+  margin: @spacing-sm 2px 0;
+  font-size: @font-size-sm;
+  color: @color-primary;
+}
+
+.pf-primary {
+  width: 100%;
+  margin-top: @spacing-lg;
+  height: 46px;
+  border: none;
+  border-radius: 23px;
+  background: linear-gradient(135deg, @color-primary, @color-primary-active);
+  color: #fff;
+  font-size: @font-size-lg;
+  font-weight: 600;
+  cursor: pointer;
+  box-shadow: 0 4px 12px rgba(196, 30, 58, 0.25);
+
+  &:active {
+    transform: scale(0.98);
+  }
+}
+
+// 轻提示
+.pf-toast {
+  position: absolute;
+  left: 50%;
+  bottom: 12%;
+  transform: translateX(-50%);
+  padding: 9px 18px;
+  background: rgba(0, 0, 0, 0.75);
+  color: #fff;
+  font-size: @font-size-base;
+  border-radius: 20px;
+  white-space: nowrap;
+  pointer-events: none;
+}
+.pf-toast-enter-active,
+.pf-toast-leave-active {
+  transition: opacity 0.25s;
+}
+.pf-toast-enter-from,
+.pf-toast-leave-to {
+  opacity: 0;
 }
 </style>

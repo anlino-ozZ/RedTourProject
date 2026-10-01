@@ -10,6 +10,10 @@ export interface AchievementBadge {
   /** 未解锁时灰色展示 */
   color?: string
   icon?: 'flag' | 'star' | 'medal'
+  /** 徽章说明（弹窗展示） */
+  desc?: string
+  /** 获取时间，格式 YYYY-MM-DD HH:mm；未解锁为空 */
+  earnedAt?: string
 }
 
 /** 待解锁任务 */
@@ -65,9 +69,28 @@ export interface ScriptTask {
 }
 
 export const mockAchievements: AchievementBadge[] = [
-  { id: 'a1', name: '初心使命', earned: false },
-  { id: 'a2', name: '旗弈先锋', earned: true, color: '#d4af37' },
-  { id: 'a3', name: '知识达人', earned: true, color: '#c41e3a' },
+  {
+    id: 'a1',
+    name: '初心使命',
+    earned: false,
+    desc: '通关沉浸式剧本《暗哨行动》，完成情报传递任务即可点亮。',
+  },
+  {
+    id: 'a2',
+    name: '旗弈先锋',
+    earned: true,
+    color: '#d4af37',
+    desc: '在红色剧本任务中行动果敢，率先完成动作识别挑战。',
+    earnedAt: '2026-09-28 14:20',
+  },
+  {
+    id: 'a3',
+    name: '知识达人',
+    earned: true,
+    color: '#c41e3a',
+    desc: '连续答对 5 道红色历史知识题，彰显扎实的知识储备。',
+    earnedAt: '2026-09-29 10:05',
+  },
 ]
 
 /** 剧本通关后解锁的徽章（对应初心使命） */
