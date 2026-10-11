@@ -19,11 +19,16 @@ export interface UserProfile {
 /** 字体缩放档位：标准 / 大号（老年友好）/ 特大 */
 export type FontScale = 'normal' | 'large' | 'xlarge'
 
+/** 语音讲解主播音色：男声 / 女声 */
+export type NarratorGender = 'male' | 'female'
+
 export interface AppSettings {
   /** 全局音效开关 */
   soundEnabled: boolean
   /** 全局字体大小档位 */
   fontScale: FontScale
+  /** 语音讲解主播音色（默认播音男主播） */
+  voiceGender: NarratorGender
 }
 
 export const DEFAULT_PROFILE: UserProfile = {
@@ -36,6 +41,7 @@ export const DEFAULT_PROFILE: UserProfile = {
 export const DEFAULT_SETTINGS: AppSettings = {
   soundEnabled: true,
   fontScale: 'normal',
+  voiceGender: 'male',
 }
 
 /** 预设头像：红色主题渐变 + 白色图标（与头部默认人像风格一致） */

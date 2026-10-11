@@ -151,14 +151,29 @@ export const routes: GuideRoute[] = [
   },
 ]
 
+/** 推荐出发点：手动选择景点 / 实时定位（无地图坐标，仅作标记） */
+export type RecommendOrigin =
+  | { type: 'spot'; spotId: number }
+  | { type: 'geo' }
+
+/** 模拟地图坐标 → 公里的换算系数（整幅地图约 7km 跨度，与路线 distance 量级一致） */
+const KM_PER_UNIT = 0.07
+
 /** AI 加权评分算法（mock）：根据偏好从 routes 中推荐 2-3 条 */
 export function recommendRoutes(params: {
   interests: InterestTag[]
   fitness: FitnessLevel
   duration: number // 可用时长（分钟）
+  /** 出发位置（可选）：手动选景点时按坐标重算距离分 */
+  origin?: RecommendOrigin
 }): (GuideRoute & { score: number; highlight: string })[] {
   const diffFromFitness: Record<FitnessLevel, number> = { easy: 1, standard: 2, deep: 3 }
   const targetDiff = diffFromFitness[params.fitness]
+
+  // 出发景点（手动模式）：用于计算出发点到路线首景点的 mock 距离
+  const origin = params.origin
+  const originSpot =
+    origin?.type === 'spot' ? spots.find((s) => s.id === origin.spotId) : undefined
 
   const scored = routes.map((r) => {
     // 1) 兴趣匹配：选对一个 +8 分（满分 32）
@@ -171,8 +186,13 @@ export function recommendRoutes(params: {
     const timeScore = r.duration > params.duration + 15 ? -20 : Math.max(0, 20 - durDelta * 0.5)
     // 4) 热度（满分 16）
     const hotScore = Math.min(16, Math.round(r.visitCount / 1000))
-    // 5) 距离（满分 12，越近越高）
-    const distScore = Math.max(0, 12 - Math.round(r.distance))
+    // 5) 距离（满分 12，越近越高）：手动选了出发点时按首景点坐标重算
+    const firstSpot = spots.find((s) => s.id === r.spotIds[0])
+    const km =
+      originSpot && firstSpot
+        ? Math.hypot(originSpot.x - firstSpot.x, originSpot.y - firstSpot.y) * KM_PER_UNIT
+        : r.distance
+    const distScore = Math.max(0, 12 - Math.round(km * 2))
 
     const score = interestScore + fitnessScore + timeScore + hotScore + distScore
 
@@ -182,6 +202,8 @@ export function recommendRoutes(params: {
     if (diffDelta === 0) highlights.push('★ 难度匹配您的体力等级')
     if (durDelta <= 15) highlights.push('★ 时长契合您的游览计划')
     if (r.visitCount >= 20000) highlights.push(`🔥 热门路线（${r.visitCount.toLocaleString()} 人游览）`)
+    if (originSpot && firstSpot && distScore >= 9) highlights.push('★ 距离您的出发点最近')
+    if (params.origin?.type === 'geo') highlights.push('★ 已结合您的实时位置')
     const highlight = highlights.length ? highlights.join(' · ') : '为您精选'
 
     return { ...r, score, highlight }

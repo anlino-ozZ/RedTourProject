@@ -8,13 +8,26 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { RedButton, RedDialog } from '@red-tour-project/common'
+import { ElMessage } from 'element-plus'
 import {
   routes,
   spots,
   type GuideRoute,
   type GuideSpot,
 } from '@/mock/guide'
-import { playScoreSound, playTapSound } from '@/utils/sound'
+import {
+  playScoreSound,
+  playTapSound,
+  playFanfareSound,
+  playBadgeShineSound,
+} from '@/utils/sound'
+import { askNarration, resolveAudioUrl } from '@/api/guide'
+import { speak, stopSpeak } from '@/utils/narrator'
+import {
+  getSettings,
+  saveSettings,
+  type NarratorGender,
+} from '@/utils/profileStorage'
 
 const route = useRoute()
 const router = useRouter()
@@ -98,31 +111,132 @@ function startTicker() {
 function nextStop() {
   lectureVisible.value = false
   if (currentIndex.value >= routeSpots.value.length - 1) {
-    // 整条路线完成
-    router.push('/guide')
+    // 整条路线完成：由"全部打卡"监听弹出庆祝弹层
     return
   }
   currentIndex.value += 1
   progress.value = 0
   startTicker()
 }
-onBeforeUnmount(stopTicker)
+
+// ===== 打卡完成庆祝 =====
+const celebrated = ref(false)
+const celebrateVisible = ref(false)
+const allStamped = computed(
+  () =>
+    routeSpots.value.length > 0 &&
+    routeSpots.value.every((s) => stampMap.value[s.id]),
+)
+watch(allStamped, (all) => {
+  if (!all || celebrated.value) return
+  celebrated.value = true
+  // 稍作停顿让用户读完到达提示，再收起讲解弹窗、弹出庆祝
+  window.setTimeout(() => {
+    lectureVisible.value = false
+    celebrateVisible.value = true
+    playFanfareSound()
+    // 号角尾音结束后叠加徽章闪耀音
+    window.setTimeout(() => playBadgeShineSound(), 900)
+  }, 600)
+})
+
+// 彩带粒子：进入页面时生成一次（随机位置/颜色/时长）
+const CONFETTI_COLORS = ['#c41e3a', '#f5a623', '#52c41a', '#2f7cf6', '#d4af37', '#722ed1']
+const confetti = Array.from({ length: 28 }, (_, i) => ({
+  id: i,
+  left: Math.random() * 100,
+  delay: Math.random() * 0.8,
+  duration: 1.6 + Math.random() * 1.4,
+  color: CONFETTI_COLORS[i % CONFETTI_COLORS.length],
+  size: 6 + Math.random() * 6,
+}))
+onBeforeUnmount(() => {
+  stopTicker()
+  stopNarration()
+})
 
 // ===== 模式切换 =====
 type TransMode = 'walk' | 'drive'
 const mode = ref<TransMode>('walk')
 
-// ===== 语音讲解 mock =====
+// ===== 语音讲解（后端 TTS 优先，浏览器语音合成兜底） =====
+/** 主播音色：男声/女声，选择结果持久化到设置 */
+const voiceGender = ref<NarratorGender>(getSettings().voiceGender)
+function setVoiceGender(g: NarratorGender) {
+  voiceGender.value = g
+  saveSettings({ voiceGender: g })
+  // 播报中切换音色：用新音色重新播报
+  if (playing.value || narrLoading.value) void playNarration()
+}
+
+const narrLoading = ref(false)
 const playing = ref(false)
-function toggleAudio() {
-  playing.value = !playing.value
-  if (playing.value) {
-    // mock：播放 3 秒后自动结束
-    window.setTimeout(() => {
-      playing.value = false
-    }, 3000)
+let audioEl: HTMLAudioElement | null = null
+
+/** 停止当前讲解（音频 + 语音合成） */
+function stopNarration() {
+  stopSpeak()
+  if (audioEl) {
+    audioEl.pause()
+    audioEl.currentTime = 0
+    audioEl = null
+  }
+  playing.value = false
+  narrLoading.value = false
+}
+
+/** 播放当前景点讲解：POST /ask 请求 TTS 音频，audioUrl 为空时浏览器合成兜底 */
+async function playNarration() {
+  const spot = currentSpot.value
+  if (!spot) return
+  stopNarration()
+  narrLoading.value = true
+  try {
+    const res = await askNarration({
+      question: `请以讲解员的口吻，详细介绍${spot.name}景点的历史背景与故事`,
+      useVoice: true,
+    })
+    narrLoading.value = false
+    if (res.audioUrl) {
+      // 后端已生成 TTS 音频，直接播放
+      const el = new Audio(resolveAudioUrl(res.audioUrl))
+      audioEl = el
+      el.onended = () => {
+        playing.value = false
+        audioEl = null
+      }
+      el.onerror = () => {
+        playing.value = false
+        audioEl = null
+      }
+      playing.value = true
+      await el.play()
+      return
+    }
+    // audioUrl 为空：浏览器 SpeechSynthesis 播报回答文本
+    playing.value = speak(res.answer || spot.desc, voiceGender.value, {
+      onEnd: () => (playing.value = false),
+    })
+  } catch {
+    narrLoading.value = false
+    // 接口异常（后端未启动等）：本地朗读景点简介兜底
+    ElMessage.warning('在线讲解暂不可用，已为您本地播报')
+    playing.value = speak(spot.desc, voiceGender.value, {
+      onEnd: () => (playing.value = false),
+    })
   }
 }
+
+function toggleAudio() {
+  if (playing.value || narrLoading.value) stopNarration()
+  else void playNarration()
+}
+
+// 切换景点 / 关闭讲解弹窗 / 离开页面时停止播报
+watch(currentIndex, stopNarration)
+watch(lectureVisible, (v) => {
+  if (!v) stopNarration()
+})
 
 // ===== 距离 & 时长（mock 计算） =====
 const mockDistance = ref(450) // 米
@@ -261,7 +375,7 @@ const pathD = computed(() => {
           :class="{ 'is-playing': playing }"
           @click="toggleAudio"
         >
-          {{ playing ? '播放中...' : '点击播放' }}
+          {{ narrLoading ? '生成中...' : playing ? '播放中...' : '点击播放' }}
         </button>
       </div>
 
@@ -294,7 +408,7 @@ const pathD = computed(() => {
     <div v-if="remainingCount === 0" class="guide-nav__bottom">
       <button
         class="guide-nav__finish"
-        @click="router.push('/guide')"
+        @click="celebrateVisible = true"
       >
         🎉 路线完成
       </button>
@@ -317,7 +431,24 @@ const pathD = computed(() => {
               {{ currentSpot.audioLen % 60 }} 秒
             </span>
             <button class="lecture__play" @click="toggleAudio">
-              {{ playing ? '暂停' : '播放' }}
+              {{ narrLoading ? '生成中...' : playing ? '停止' : '播放' }}
+            </button>
+          </div>
+          <div class="lecture__voices">
+            <span class="lecture__voices-label">主播音色</span>
+            <button
+              class="lecture__voice"
+              :class="{ 'is-active': voiceGender === 'male' }"
+              @click="setVoiceGender('male')"
+            >
+              🎙️ 播音男主播
+            </button>
+            <button
+              class="lecture__voice"
+              :class="{ 'is-active': voiceGender === 'female' }"
+              @click="setVoiceGender('female')"
+            >
+              🎙️ 播音女主播
             </button>
           </div>
           <p class="lecture__tip">
@@ -332,6 +463,37 @@ const pathD = computed(() => {
         </RedButton>
       </template>
     </RedDialog>
+
+    <!-- ===== 打卡完成庆祝弹层 ===== -->
+    <div v-if="celebrateVisible" class="celebrate">
+      <span
+        v-for="c in confetti"
+        :key="c.id"
+        class="celebrate__confetti"
+        :style="{
+          left: `${c.left}%`,
+          background: c.color,
+          width: `${c.size}px`,
+          height: `${c.size * 0.5}px`,
+          animationDelay: `${c.delay}s`,
+          animationDuration: `${c.duration}s`,
+        }"
+      ></span>
+      <div class="celebrate__card">
+        <span class="celebrate__trophy">🏆</span>
+        <h2 class="celebrate__title">恭喜打卡完成！</h2>
+        <p class="celebrate__sub">{{ currentRoute.name }}</p>
+        <p class="celebrate__num">共打卡 {{ routeSpots.length }} 个景点 · 全部完成</p>
+        <div class="celebrate__actions">
+          <RedButton type="primary" size="medium" @click="router.push('/guide')">
+            返回导览首页
+          </RedButton>
+          <RedButton type="ghost" size="medium" @click="celebrateVisible = false">
+            继续查看
+          </RedButton>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -695,6 +857,125 @@ const pathD = computed(() => {
     margin: 0;
     font-size: @font-size-sm;
     color: @color-text-secondary;
+  }
+  &__voices {
+    display: flex;
+    align-items: center;
+    gap: @spacing-sm;
+    margin-bottom: @spacing-md;
+  }
+  &__voices-label {
+    font-size: @font-size-sm;
+    color: @color-text-secondary;
+  }
+  &__voice {
+    padding: 5px 12px;
+    border: 1.5px solid @color-border;
+    border-radius: 16px;
+    background: @color-bg-card;
+    color: @color-text-regular;
+    font-size: @font-size-sm;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s;
+
+    &.is-active {
+      border-color: @color-primary;
+      background: @color-primary;
+      color: #fff;
+      font-weight: 600;
+    }
+  }
+}
+
+// ===== 打卡完成庆祝弹层 =====
+.celebrate {
+  position: fixed;
+  inset: 0;
+  z-index: 999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: @spacing-lg;
+  background: rgba(20, 8, 10, 0.72);
+  backdrop-filter: blur(4px);
+
+  &__confetti {
+    position: absolute;
+    top: -12px;
+    border-radius: 2px;
+    opacity: 0;
+    animation: celebrate-fall linear infinite;
+    pointer-events: none;
+  }
+  @keyframes celebrate-fall {
+    0% {
+      transform: translateY(0) rotate(0deg);
+      opacity: 1;
+    }
+    100% {
+      transform: translateY(105vh) rotate(540deg);
+      opacity: 0.6;
+    }
+  }
+
+  &__card {
+    position: relative;
+    z-index: 1;
+    width: min(340px, 88vw);
+    padding: @spacing-xl @spacing-lg;
+    text-align: center;
+    background: @color-bg-card;
+    border-radius: @radius-lg;
+    box-shadow: 0 12px 40px rgba(0, 0, 0, 0.35);
+    animation: celebrate-pop 0.55s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+  }
+  @keyframes celebrate-pop {
+    0% {
+      transform: scale(0.4);
+      opacity: 0;
+    }
+    100% {
+      transform: scale(1);
+      opacity: 1;
+    }
+  }
+  &__trophy {
+    display: inline-block;
+    font-size: 56px;
+    line-height: 1;
+    animation: celebrate-bounce 1.2s ease-in-out infinite;
+  }
+  @keyframes celebrate-bounce {
+    0%,
+    100% {
+      transform: translateY(0);
+    }
+    50% {
+      transform: translateY(-10px);
+    }
+  }
+  &__title {
+    margin: @spacing-sm 0 @spacing-xs;
+    font-size: 22px;
+    font-weight: 700;
+    color: @color-text-primary;
+  }
+  &__sub {
+    margin: 0 0 4px;
+    font-size: @font-size-base;
+    font-weight: 600;
+    color: @color-primary;
+  }
+  &__num {
+    margin: 0 0 @spacing-lg;
+    font-size: @font-size-sm;
+    color: @color-text-secondary;
+  }
+  &__actions {
+    display: flex;
+    justify-content: center;
+    gap: @spacing-sm;
   }
 }
 </style>
