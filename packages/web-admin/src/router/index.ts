@@ -84,6 +84,12 @@ const routes: RouteRecordRaw[] = [
         meta: { title: '知识库管理' },
       },
       {
+        path: 'script',
+        name: 'script',
+        component: () => import('@/views/Script.vue'),
+        meta: { title: '剧本管理' },
+      },
+      {
         path: 'achievement',
         name: 'achievement',
         component: () => import('@/views/Achievement.vue'),

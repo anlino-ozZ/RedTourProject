@@ -47,7 +47,10 @@ async function loadScenicOptions() {
 }
 
 // ===== 编译状态元信息 =====
-const statusMeta: Record<WikiCompileStatus, { text: string; type: 'info' | 'primary' | 'success' | 'danger' }> = {
+const statusMeta: Record<
+  WikiCompileStatus,
+  { text: string; type: 'info' | 'primary' | 'success' | 'danger' }
+> = {
   pending: { text: '待编译', type: 'info' },
   compiling: { text: '编译中', type: 'primary' },
   done: { text: '已完成', type: 'success' },
@@ -105,7 +108,9 @@ function handleSizeChange(size: number) {
 // ===== 新增/编辑弹窗 =====
 const dialogVisible = ref(false)
 const dialogMode = ref<'create' | 'edit'>('create')
-const dialogTitle = computed(() => (dialogMode.value === 'create' ? '新增 Wiki 条目' : '编辑 Wiki 条目'))
+const dialogTitle = computed(() =>
+  dialogMode.value === 'create' ? '新增 Wiki 条目' : '编辑 Wiki 条目',
+)
 const formRef = ref<FormInstance>()
 const submitting = ref(false)
 
@@ -333,7 +338,12 @@ onMounted(() => {
         >
           <el-option v-for="s in scenicOptions" :key="s.id" :label="s.name" :value="s.id" />
         </el-select>
-        <el-select v-model="query.compileStatus" placeholder="编译状态" clearable style="width: 130px">
+        <el-select
+          v-model="query.compileStatus"
+          placeholder="编译状态"
+          clearable
+          style="width: 130px"
+        >
           <el-option v-for="(meta, key) in statusMeta" :key="key" :label="meta.text" :value="key" />
         </el-select>
         <RedButton type="primary" size="small" @click="handleSearch">搜索</RedButton>
@@ -352,13 +362,15 @@ onMounted(() => {
       <el-table-column label="标签" min-width="150" show-overflow-tooltip>
         <template #default="{ row }">
           <template v-if="row.tags && row.tags.length > 0">
-            <el-tag v-for="t in row.tags" :key="t" effect="plain" class="wiki-page__tag">{{ t }}</el-tag>
+            <el-tag v-for="t in row.tags" :key="t" effect="plain" class="wiki-page__tag">
+              {{ t }}
+            </el-tag>
           </template>
           <span v-else>—</span>
         </template>
       </el-table-column>
       <el-table-column label="编译状态" width="100">
-        <template #default="{ row }">
+        <template #default="{ row }: { row: AdminWikiItem }">
           <el-tag :type="statusMeta[row.compileStatus]?.type" effect="plain">
             {{ statusMeta[row.compileStatus]?.text || row.compileStatus }}
           </el-tag>
@@ -439,7 +451,9 @@ onMounted(() => {
               class="wiki-page__content-input"
             />
             <div class="wiki-page__import-row">
-              <el-button size="small" @click="triggerImportFile">从文本文件导入（.txt/.md）</el-button>
+              <el-button size="small" @click="triggerImportFile">
+                从文本文件导入（.txt/.md）
+              </el-button>
               <input
                 ref="fileInputRef"
                 type="file"
@@ -484,12 +498,7 @@ onMounted(() => {
     </el-dialog>
 
     <!-- 详情抽屉 -->
-    <el-drawer
-      v-model="detailVisible"
-      title="Wiki 条目详情"
-      size="60%"
-      direction="rtl"
-    >
+    <el-drawer v-model="detailVisible" title="Wiki 条目详情" size="60%" direction="rtl">
       <div v-loading="detailLoading" class="wiki-page__detail">
         <template v-if="detail">
           <h3 class="wiki-page__detail-title">{{ detail.title }}</h3>
@@ -506,16 +515,26 @@ onMounted(() => {
               <code v-if="detail.filePath" class="wiki-page__path">{{ detail.filePath }}</code>
               <span v-else>—</span>
             </el-descriptions-item>
-            <el-descriptions-item label="更新时间">{{ formatTime(detail.updatedAt) }}</el-descriptions-item>
+            <el-descriptions-item label="更新时间">
+              {{ formatTime(detail.updatedAt) }}
+            </el-descriptions-item>
             <el-descriptions-item label="标签" :span="2">
               <template v-if="detail.tags && detail.tags.length > 0">
-                <el-tag v-for="t in detail.tags" :key="t" effect="plain" class="wiki-page__tag">{{ t }}</el-tag>
+                <el-tag v-for="t in detail.tags" :key="t" effect="plain" class="wiki-page__tag">
+                  {{ t }}
+                </el-tag>
               </template>
               <span v-else>—</span>
             </el-descriptions-item>
             <el-descriptions-item label="引用关系" :span="2">
               <template v-if="detail.links && detail.links.length > 0">
-                <el-tag v-for="l in detail.links" :key="l" type="success" effect="plain" class="wiki-page__tag">
+                <el-tag
+                  v-for="l in detail.links"
+                  :key="l"
+                  type="success"
+                  effect="plain"
+                  class="wiki-page__tag"
+                >
                   [[{{ l }}]]
                 </el-tag>
               </template>

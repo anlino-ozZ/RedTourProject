@@ -485,3 +485,73 @@ export function compileAdminWiki(id: number) {
 export function deleteAdminWiki(id: number) {
   return request.delete(`/admin/wiki/${id}`) as Promise<null>
 }
+
+// ===== 管理端剧本管理接口（接口文档 14.8 节，表 scripts）=====
+// 剧本由角色列表 + 剧情节点树组成；游客在节点做出选择跳转下一节点，完成剧本解锁成就
+
+/** 剧本角色 */
+export interface ScriptRole {
+  id?: number
+  name: string
+  avatar?: string // 头像图片 URL
+  skill?: string // 技能描述
+}
+
+/** 剧情选项：选项文本 + 跳转节点 ID */
+export interface ScriptNodeOption {
+  text: string
+  /** 跳转目标节点 ID；为空表示剧终 */
+  nextNodeId?: number | null
+}
+
+/** 剧情节点 */
+export interface ScriptNode {
+  id: number
+  sceneText: string // 场景描述文本
+  options: ScriptNodeOption[]
+}
+
+/** 剧本（列表即全量字段，管理端无单独详情接口） */
+export interface AdminScriptItem {
+  id: number
+  scenicAreaId: number
+  title: string
+  description?: string
+  coverImage?: string
+  roles: ScriptRole[]
+  nodes: ScriptNode[]
+  achievements?: { id: number }[]
+  status: number // 0 下线 / 1 上线
+}
+
+/** 新增/编辑剧本请求体 */
+export interface AdminScriptPayload {
+  scenicAreaId: number
+  title: string
+  description?: string
+  coverImage?: string
+  roles: ScriptRole[]
+  nodes: ScriptNode[]
+  achievements?: { id: number }[]
+  status: number
+}
+
+/** 剧本列表（scenicAreaId 必传） */
+export function getAdminScripts(scenicAreaId: number) {
+  return request.get('/admin/scripts', { params: { scenicAreaId } }) as Promise<AdminScriptItem[]>
+}
+
+/** 新增剧本 */
+export function createAdminScript(data: AdminScriptPayload) {
+  return request.post('/admin/scripts', data) as Promise<AdminScriptItem>
+}
+
+/** 编辑剧本 */
+export function updateAdminScript(id: number, data: AdminScriptPayload) {
+  return request.put(`/admin/scripts/${id}`, data) as Promise<AdminScriptItem>
+}
+
+/** 删除剧本 */
+export function deleteAdminScript(id: number) {
+  return request.delete(`/admin/scripts/${id}`) as Promise<null>
+}

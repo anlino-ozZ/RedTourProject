@@ -304,7 +304,7 @@ onMounted(() => {
         </template>
       </el-table-column>
       <el-table-column label="触发类型" width="100">
-        <template #default="{ row }">
+        <template #default="{ row }: { row: AdminAchievementItem }">
           <el-tag :type="triggerMeta[row.triggerType]?.type" effect="plain">
             {{ triggerMeta[row.triggerType]?.text || row.triggerType }}
           </el-tag>

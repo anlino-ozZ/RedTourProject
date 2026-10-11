@@ -254,7 +254,7 @@ onMounted(() => {
         </template>
       </el-table-column>
       <el-table-column label="状态" width="90">
-        <template #default="{ row }">
+        <template #default="{ row }: { row: AdminProductOrderItem }">
           <el-tag :type="statusMeta[row.status]?.type" effect="plain">
             {{ statusMeta[row.status]?.text || row.status }}
           </el-tag>
@@ -266,7 +266,7 @@ onMounted(() => {
         </template>
       </el-table-column>
       <el-table-column label="操作" width="170" fixed="right">
-        <template #default="{ row }">
+        <template #default="{ row }: { row: AdminProductOrderItem }">
           <el-button link type="primary" size="small" @click="openDetail(row)">详情</el-button>
           <el-button
             v-if="nextAction[row.status]"

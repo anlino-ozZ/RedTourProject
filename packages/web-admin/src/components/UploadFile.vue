@@ -24,8 +24,8 @@ import {
 import { useUserStore } from '@/store'
 
 interface Props {
-  /** v-model：单文件为 string，多文件为 string[] */
-  modelValue: string | string[]
+  /** v-model：单文件为 string，多文件为 string[]；允许 undefined（业务字段可选） */
+  modelValue?: string | string[]
   /** 上传业务类型 */
   type?: UploadFileType
   /** 是否多文件 */
@@ -80,7 +80,7 @@ const effectiveScenicAreaId = computed(() => props.scenicAreaId ?? userStore.use
 // ===== 当前 URL 集合（内部统一按数组处理） =====
 const urls = ref<string[]>(normalizeValue(props.modelValue))
 
-function normalizeValue(value: string | string[]): string[] {
+function normalizeValue(value?: string | string[]): string[] {
   if (props.multiple) {
     return Array.isArray(value) ? value.filter(Boolean) : value ? [value] : []
   }
@@ -157,7 +157,9 @@ async function customUpload(options: UploadRequestOptions) {
     options.onSuccess?.(result)
   } catch (error) {
     // 业务错误提示已由 request 拦截器统一弹出
-    options.onError?.(error as Error)
+    // 从 el-upload onError 签名提取错误参数类型（UploadAjaxError 未从根导出）
+    type OnErrorParam = Parameters<NonNullable<UploadRequestOptions['onError']>>[0]
+    options.onError?.(error as OnErrorParam)
   } finally {
     uploading.value = false
   }

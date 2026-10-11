@@ -332,7 +332,7 @@ onMounted(() => {
         </template>
       </el-table-column>
       <el-table-column label="分类" width="80">
-        <template #default="{ row }">
+        <template #default="{ row }: { row: AdminProductItem }">
           <el-tag :type="categoryMap[row.category]?.type" effect="plain">
             {{ categoryMap[row.category]?.text || row.category }}
           </el-tag>
