@@ -97,6 +97,18 @@ const routes: RouteRecordRaw[] = [
         meta: { title: '成就定义管理', roles: ['super_admin'] },
       },
       // 统计等模块路由由后续 W-A-xx 任务在此追加
+      {
+        path: 'stats',
+        name: 'stats',
+        component: () => import('@/views/Stats.vue'),
+        meta: { title: '数据统计' },
+      },
+      {
+        path: 'device',
+        name: 'device',
+        component: () => import('@/views/Device.vue'),
+        meta: { title: '设备监控' },
+      },
     ],
   },
   // 未匹配路由统一回首页（后续可替换为 404 页面）

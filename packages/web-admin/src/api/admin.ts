@@ -555,3 +555,62 @@ export function updateAdminScript(id: number, data: AdminScriptPayload) {
 export function deleteAdminScript(id: number) {
   return request.delete(`/admin/scripts/${id}`) as Promise<null>
 }
+
+// ===== 管理端数据统计接口（接口文档 14.9 节，PRD 5.7 用户分析）=====
+
+/** 统计通用查询参数 */
+export interface AnalyticsQuery {
+  /** 景区 ID；普管必传（管辖景区），超管不传=全部景区 */
+  scenicAreaId?: number
+  /** 起始日期 YYYY-MM-DD */
+  startDate?: string
+  /** 结束日期 YYYY-MM-DD */
+  endDate?: string
+}
+
+/** 游客访问趋势（按日聚合） */
+export interface VisitTrendData {
+  dates: string[]
+  series: number[]
+}
+
+/** 热门景点排行项 */
+export interface HotSpotItem {
+  spotId: number
+  spotName: string
+  visitCount: number
+}
+
+/** 热门问题统计项（文档未给出响应结构，沿用 hot-spots 的名称+数量模式） */
+export interface HotQuestionItem {
+  questionId?: number
+  question: string
+  askCount: number
+}
+
+/** 特产点击率统计项 */
+export interface ProductClickItem {
+  productId: number
+  productName: string
+  clickCount: number
+}
+
+/** 游客访问趋势（按日聚合） */
+export function getVisitTrend(params: AnalyticsQuery) {
+  return request.get('/admin/analytics/visits', { params }) as Promise<VisitTrendData>
+}
+
+/** 热门景点排行 */
+export function getHotSpots(params: AnalyticsQuery) {
+  return request.get('/admin/analytics/hot-spots', { params }) as Promise<HotSpotItem[]>
+}
+
+/** 热门问题统计 */
+export function getHotQuestions(params: AnalyticsQuery) {
+  return request.get('/admin/analytics/hot-questions', { params }) as Promise<HotQuestionItem[]>
+}
+
+/** 特产点击率统计 */
+export function getProductClicks(params: AnalyticsQuery) {
+  return request.get('/admin/analytics/products', { params }) as Promise<ProductClickItem[]>
+}

@@ -34,6 +34,7 @@ const allMenuItems: AdminMenuItem[] = [
   { title: '成就定义管理', path: '/achievement', roles: ['super_admin'] },
   { title: '用户管理', path: '/user', roles: ['super_admin'] },
   { title: '数据统计', path: '/stats' },
+  { title: '设备监控', path: '/device' },
 ]
 
 const visibleMenuItems = computed<AdminMenuItem[]>(() =>
