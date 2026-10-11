@@ -22,6 +22,7 @@ __pycache__/
 packages/ai-engine/models/
 packages/ai-engine/weights/
 packages/ai-engine/wiki_build/
+packages/ai-engine/stt_temp/
 ollama_models/
 
 # ===== 树莓派硬件镜像 / 系统镜像 =====

@@ -27,7 +27,10 @@ src/main/resources
 
 ## 对接说明
 
-- **AI 引擎（HTTP）**：`AiEngineClient` 通过 RestTemplate 调用 `ai-engine`(:8001) 的 `/engine/health`、`/engine/ask`。
+- **AI 引擎（HTTP）**：`AiEngineClient` 通过 RestTemplate 调用 `ai-engine`(:8001) 的健康检查、问答、Wiki、STT 与 TTS 接口。
+- **本地语音识别**：触摸屏上传至 `POST /api/v1/stt` 的 multipart `audio` 字段，由业务后端代理到 AI 引擎。
+- **姿态识别**：触摸屏调用 `POST /api/v1/pose/recognize`，业务后端代理 Base64 图像帧，前端无需直连 AI 引擎。
+- **姿态流代理**：触摸屏连接 `WS /api/v1/pose/stream?deviceId=...&scenicAreaId=...`，连续 3 帧高置信度同动作后才推送触发内容。
 - **树莓派硬件（TCP）**：`HardwareTcpClient` 通过 TCP 长连接（换行分隔 JSON）与 `hardware-rpi` 通信，地址见 `hardware.tcp.*`。
 
 ## 环境要求
@@ -55,3 +58,13 @@ java -jar target/server-business.jar --spring.profiles.active=prod
 ## 健康检查
 
 `GET http://localhost:8000/api/v1/health` → `{code,message,data:{db,redis,ai,hardware}}`
+
+## 智能问答
+
+`POST http://localhost:8000/api/v1/ask` 将请求透传至 AI 引擎，并将结果写入
+`ask_log`。触摸屏可额外携带请求头 `X-Device-Id` 标记来源设备；AI 引擎或日志
+数据库短暂不可用时仍返回结构完整的降级结果。
+
+`GET http://localhost:8000/api/v1/ask/recommendations?scenicAreaId=<id>` 聚合指定景区
+最近 30 天的有效问答记录，动态热门问题优先；不足时依次由景区静态配置和统一离线问题
+补足至至少 5 条，最多返回 10 条。热门日志查询失败时仍可返回静态或离线推荐。
