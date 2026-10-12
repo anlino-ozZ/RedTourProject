@@ -61,6 +61,12 @@ const routes: RouteRecordRaw[] = [
     meta: { title: '', showTabBar: true },
   },
   {
+    path: '/interactive/scripts',
+    name: 'interactive-scripts',
+    component: () => import('@/views/ScriptList.vue'),
+    meta: { title: '选择剧本', showTabBar: true },
+  },
+  {
     path: '/interactive/script',
     name: 'interactive-script',
     component: () => import('@/views/ScriptPlay.vue'),
