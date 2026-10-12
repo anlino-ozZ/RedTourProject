@@ -4,19 +4,46 @@
  * 顶部暗色剧本 Hero（剧场氛围）+ 白色内容区上叠（成就徽章 + 待解锁任务）
  * 数据暂为 Mock
  */
-import { computed, ref } from 'vue'
+import { computed, onUnmounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { mockAchievements, mockTasks, mockScript } from '@/mock/interaction'
+import { mockAchievements, mockScripts, mockTasks } from '@/mock/interaction'
 import type { AchievementBadge, InteractionTask } from '@/mock/interaction'
 import { playBadgeShineSound, playLockedSound } from '@/utils/sound'
+import { getUnlockedBadges } from '@/utils/achievementStorage'
 
 const router = useRouter()
 
-const achievements = ref<AchievementBadge[]>(mockAchievements)
-const tasks = ref<InteractionTask[]>(mockTasks)
+// 合并本地解锁状态：剧本通关等途径解锁的徽章在此点亮（未解锁缺省补金色）
+const unlockedMap = getUnlockedBadges()
+const achievements = ref<AchievementBadge[]>(
+  mockAchievements.map((b) =>
+    !b.earned && unlockedMap[b.id]
+      ? { ...b, earned: true, earnedAt: unlockedMap[b.id], color: b.color ?? '#d4af37' }
+      : b,
+  ),
+)
+// 剧本通关进度（真实数据：奖励徽章已解锁即该剧本已通关）
+const playableScripts = mockScripts.filter((s) => !s.locked)
+const clearedCount = computed(
+  () => playableScripts.filter((s) => unlockedMap[s.reward.badgeId]).length,
+)
+const scriptProgress = computed(() =>
+  playableScripts.length ? Math.round((clearedCount.value / playableScripts.length) * 100) : 0,
+)
+
+// 任务列表：剧本任务按通关进度联动状态（全部通关 → 已完成）
+const tasks = ref<InteractionTask[]>(
+  mockTasks.map((t) =>
+    t.id === 't0' && clearedCount.value === playableScripts.length
+      ? { ...t, status: 'done' as const, actionText: '已完成' }
+      : t,
+  ),
+)
 
 // 当前进行中的剧本（Hero 展示位）
 const featuredTask = computed(() => tasks.value.find((t) => t.actionTo))
+// Hero 展示第一部可玩剧本
+const featuredScript = computed(() => mockScripts.find((s) => !s.locked))
 const earnedCount = computed(() => achievements.value.filter((a) => a.earned).length)
 
 const toastText = ref('')
@@ -31,6 +58,7 @@ function onTask(task: InteractionTask) {
   if (task.actionTo) {
     router.push(task.actionTo)
   } else {
+    playLockedSound()
     showToast('该任务即将上线，敬请期待')
   }
 }
@@ -47,6 +75,13 @@ function openBadge(badge: AchievementBadge) {
 function closeBadge() {
   selectedBadge.value = null
 }
+
+// Esc 关闭徽章弹窗（键盘可达性）
+function onKeydown(e: KeyboardEvent) {
+  if (e.key === 'Escape' && selectedBadge.value) closeBadge()
+}
+window.addEventListener('keydown', onKeydown)
+onUnmounted(() => window.removeEventListener('keydown', onKeydown))
 </script>
 
 <template>
@@ -62,14 +97,17 @@ function closeBadge() {
         </div>
 
         <!-- 剧本展示位 -->
-        <div v-if="featuredTask" class="script-banner" @click="onTask(featuredTask)">
+        <div v-if="featuredTask" class="script-banner" role="button" tabindex="0" @click="onTask(featuredTask)" @keyup.enter="onTask(featuredTask)">
           <span class="script-banner__tag">沉浸式剧本</span>
-          <h2 class="script-banner__name">红色剧本 · 暗哨行动</h2>
+          <h2 class="script-banner__name">红色剧本 · {{ featuredScript?.title }}</h2>
           <p class="script-banner__desc">{{ featuredTask.desc }}</p>
           <div class="script-banner__progress">
-            <i :style="{ width: '60%' }" />
+            <i :style="{ width: scriptProgress + '%' }" />
+            <span class="script-banner__progress-text">
+              已通关 {{ clearedCount }}/{{ playableScripts.length }} 部
+            </span>
           </div>
-          <button class="script-banner__cta">进入剧本</button>
+          <button class="script-banner__cta">选择剧本</button>
         </div>
       </div>
     </div>
@@ -78,7 +116,7 @@ function closeBadge() {
     <div class="panel">
       <!-- 成就徽章 -->
       <div class="panel__section-head">
-        <h2 class="panel__section-title">红色成就馆</h2>
+        <h2 class="panel__section-title">个人成就馆</h2>
         <span class="panel__section-more">集齐徽章点亮初心</span>
       </div>
       <div class="badges">
@@ -136,15 +174,20 @@ function closeBadge() {
           v-for="task in tasks"
           :key="task.id"
           class="task-card"
+          :class="{ 'is-done': task.status === 'done' }"
+          role="button"
+          tabindex="0"
           @click="onTask(task)"
+          @keyup.enter="onTask(task)"
         >
           <div class="task-card__info">
             <div class="task-card__title">{{ task.title }}</div>
             <div class="task-card__desc">{{ task.desc }}</div>
           </div>
           <button
+            type="button"
             class="task-card__action"
-            :class="{ 'is-todo': task.status === 'todo' }"
+            :class="{ 'is-todo': task.status === 'todo', 'is-done': task.status === 'done' }"
           >
             {{ task.actionText }}
           </button>
@@ -318,6 +361,7 @@ function closeBadge() {
   border: 1px solid rgba(255, 255, 255, 0.14);
   backdrop-filter: blur(10px);
   cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
 
   &:active {
     transform: scale(0.99);
@@ -348,18 +392,27 @@ function closeBadge() {
   }
 
   &__progress {
+    position: relative;
     height: 6px;
-    margin-bottom: @spacing-md;
+    margin-bottom: calc(@spacing-md + 16px); // 为右下通关计数文本预留空间
     border-radius: 3px;
     background: rgba(255, 255, 255, 0.15);
-    overflow: hidden;
 
     i {
       display: block;
       height: 100%;
       border-radius: 3px;
       background: linear-gradient(90deg, @color-primary 0%, @color-primary-hover 100%);
+      transition: width 0.5s ease;
     }
+  }
+
+  &__progress-text {
+    position: absolute;
+    right: 0;
+    top: 10px;
+    font-size: @font-size-sm;
+    color: rgba(255, 255, 255, 0.55);
   }
 
   &__cta {
@@ -417,7 +470,9 @@ function closeBadge() {
 // ===== 成就徽章 =====
 .badges {
   display: flex;
+  flex-wrap: wrap;
   justify-content: space-between;
+  gap: @spacing-sm;
   padding: @spacing-md @spacing-lg;
   margin-bottom: @spacing-lg;
   border-radius: @radius-lg;
@@ -446,6 +501,8 @@ function closeBadge() {
     height: 60px;
     border-radius: 50%;
     background: @color-text-secondary;
+    // 未解锁锁图标在灰底上用浅色，保证对比度
+    color: rgba(255, 255, 255, 0.9);
   }
 
   &.is-earned .badge__circle {
@@ -485,6 +542,11 @@ function closeBadge() {
   border-left: 4px solid @color-primary;
   box-shadow: @shadow-card;
   cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+
+  &.is-done {
+    border-left-color: #d4af37;
+  }
 
   &:active {
     transform: scale(0.99);
@@ -521,6 +583,11 @@ function closeBadge() {
     &.is-todo {
       background: #d9d9d9;
       color: @color-text-secondary;
+    }
+
+    &.is-done {
+      background: rgba(212, 175, 55, 0.15);
+      color: #a07f1c;
     }
   }
 }
@@ -630,6 +697,8 @@ function closeBadge() {
     height: 96px;
     border-radius: 50%;
     background: linear-gradient(135deg, #9a9a9a 0%, #cfcfcf 100%);
+    // 未解锁锁图标在灰底上用浅色，保证对比度
+    color: rgba(255, 255, 255, 0.92);
     box-shadow:
       inset 0 2px 6px rgba(255, 255, 255, 0.45),
       inset 0 -4px 8px rgba(0, 0, 0, 0.18),
