@@ -16,6 +16,7 @@ import {
   playTapSound,
   playWrongSound,
 } from '@/utils/sound'
+import { addPoints } from '@/utils/levelStorage'
 
 const router = useRouter()
 
@@ -192,6 +193,8 @@ const collected = ref(false)
 function toReward() {
   if (isTyping.value) return
   stage.value = 'reward'
+  // 剧本通关：累计积分落库（等级体系），重玩重复通关也计分
+  addPoints(score.value)
   // 徽章解锁号角
   playFanfareSound()
 }

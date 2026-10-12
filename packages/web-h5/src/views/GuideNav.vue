@@ -23,6 +23,7 @@ import {
 } from '@/utils/sound'
 import { askNarration, resolveAudioUrl } from '@/api/guide'
 import { speak, stopSpeak } from '@/utils/narrator'
+import { addPoints } from '@/utils/levelStorage'
 import {
   getSettings,
   saveSettings,
@@ -102,6 +103,8 @@ function startTicker() {
       progress.value = 0
       // 到达当前景点：打卡 + 弹出讲解 + 到达提示音
       stampMap.value[currentSpot.value!.id] = true
+      // 景点打卡积分落库（等级体系）
+      addPoints(5)
       lectureVisible.value = true
       playScoreSound()
       stopTicker()
