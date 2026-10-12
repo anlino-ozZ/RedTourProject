@@ -17,6 +17,7 @@ import {
   playTapSound,
   playWrongSound,
 } from '@/utils/sound'
+import { addPoints } from '@/utils/levelStorage'
 import { unlockBadge } from '@/utils/achievementStorage'
 
 const router = useRouter()
@@ -201,6 +202,8 @@ const collected = ref(false)
 function toReward() {
   if (isTyping.value) return
   stage.value = 'reward'
+  // 剧本通关：累计积分落库（等级体系），重玩重复通关也计分
+  addPoints(score.value)
   // 徽章解锁号角
   playFanfareSound()
   // 写入解锁状态（互动中心徽章墙据此点亮）；仅首次解锁时错峰叠徽章闪耀音

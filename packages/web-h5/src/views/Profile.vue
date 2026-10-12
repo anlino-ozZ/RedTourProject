@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import {
   mockUser,
@@ -23,6 +23,14 @@ import {
 } from '@/utils/profileStorage'
 import { applyFontScale } from '@/utils/fontScale'
 import { clearSessions, listSessions } from '@/utils/qaStorage'
+import { LEVEL_RULES, addPoints, getLevelInfo, type LevelInfo } from '@/utils/levelStorage'
+import {
+  checkInToday,
+  getCheckIn,
+  isCheckedToday,
+  quoteOfTheDay,
+  type CheckInState,
+} from '@/utils/checkInStorage'
 import { playCorrectSound, playTapSound, playWrongSound } from '@/utils/sound'
 
 const router = useRouter()
@@ -31,11 +39,100 @@ const router = useRouter()
 const profile = ref<UserProfile>(getProfile())
 const settings = ref<AppSettings>(getSettings())
 
-/** 头部展示用户：mock 的等级/统计不变，昵称/签名/头像用本地资料覆盖 */
+// ===== 等级体系：积分驱动，进入页面时刷新 =====
+const levelInfo = ref<LevelInfo>(getLevelInfo())
+onMounted(() => {
+  levelInfo.value = getLevelInfo()
+})
+
+// ===== 每日签到：每日首次 +10 积分，签到后展示当日革命先辈名言 =====
+const SIGN_IN_POINTS = 10
+const checkInState = ref<CheckInState>(getCheckIn())
+const checkedToday = ref(isCheckedToday())
+const quote = quoteOfTheDay()
+
+// 诗句逐字淡入：含「」一起拆字
+const quoteChars = computed(() => ('「' + quote.text + '」').split(''))
+
+// 签到成功的淡金色星火粒子：从按钮位置缓慢向上飘散（确定性参数，避免重渲染跳动）
+interface Spark {
+  left: number
+  delay: number
+  dur: number
+  size: number
+  color: string
+  dx: number
+  rise: number
+}
+const SPARK_COLORS = ['#d4af37', '#e6c96b', '#f0dc9e', '#c9a227']
+const sparkles: Spark[] = Array.from({ length: 18 }, () => ({
+  left: 18 + Math.random() * 64,
+  delay: Math.random() * 0.7,
+  dur: 1.9 + Math.random() * 1.3,
+  size: 2.5 + Math.random() * 3,
+  color: SPARK_COLORS[Math.floor(Math.random() * SPARK_COLORS.length)],
+  dx: (Math.random() - 0.5) * 46,
+  rise: 110 + Math.random() * 90,
+}))
+const sparkleOn = ref(false)
+let sparkleStartTimer: number | null = null
+let sparkleEndTimer: number | null = null
+
+/** 星火粒子触发：先归零再下一帧启动，保证重复触发时动画重启 */
+function fireSparkles() {
+  if (sparkleStartTimer) clearTimeout(sparkleStartTimer)
+  if (sparkleEndTimer) clearTimeout(sparkleEndTimer)
+  sparkleOn.value = false
+  sparkleStartTimer = window.setTimeout(() => {
+    sparkleOn.value = true
+    sparkleEndTimer = window.setTimeout(() => {
+      sparkleOn.value = false
+    }, 3600)
+  }, 50)
+}
+
+onUnmounted(() => {
+  if (sparkleStartTimer) clearTimeout(sparkleStartTimer)
+  if (sparkleEndTimer) clearTimeout(sparkleEndTimer)
+})
+
+function onCheckIn() {
+  if (checkedToday.value) return
+  const result = checkInToday()
+  if (!result) {
+    checkedToday.value = true
+    return
+  }
+  checkInState.value = result
+  checkedToday.value = true
+  addPoints(SIGN_IN_POINTS)
+  levelInfo.value = getLevelInfo()
+  playCorrectSound()
+  fireSparkles()
+}
+
+// ===== 每日签到弹窗 =====
+const checkInModalVisible = ref(false)
+
+function openCheckIn() {
+  // 打开时刷新签到状态，处理页面跨天未刷新的情况
+  checkInState.value = getCheckIn()
+  checkedToday.value = isCheckedToday()
+  checkInModalVisible.value = true
+  playTapSound()
+}
+
+function closeCheckIn() {
+  checkInModalVisible.value = false
+}
+
+/** 头部展示用户：等级由本地积分实时解析，昵称/签名/头像用本地资料覆盖 */
 const user = computed(() => ({
   ...mockUser,
   nickname: profile.value.nickname,
   slogan: profile.value.slogan,
+  level: levelInfo.value.level,
+  levelName: levelInfo.value.levelName,
 }))
 
 const medals = mockMedals
@@ -70,11 +167,61 @@ const allStats = computed(() => user.value.stats)
 
 function onFootprintAction(to?: string) {
   if (to) router.push(to)
+  else showToast('更多足迹详情开发中，敬请期待')
+}
+
+/** 足迹卡片整卡点击：有跳转目标才响应 */
+function onFootprintCard(to?: string) {
+  if (to) {
+    playTapSound()
+    router.push(to)
+  }
 }
 
 function medalColor(m: MedalItem) {
   if (!m.earned) return '#bfbfbf'
   return m.color ?? '#c41e3a'
+}
+
+// ===== 勋章详情弹窗 =====
+const selectedMedal = ref<MedalItem | null>(null)
+
+function openMedal(m: MedalItem) {
+  selectedMedal.value = m
+  if (m.earned) playCorrectSound()
+  else playTapSound()
+}
+
+function closeMedal() {
+  selectedMedal.value = null
+}
+
+// Esc 关闭勋章弹窗（键盘可达性）
+function onMedalKeydown(e: KeyboardEvent) {
+  if (e.key === 'Escape' && selectedMedal.value) closeMedal()
+  if (e.key === 'Escape' && levelModalVisible.value) closeLevel()
+  if (e.key === 'Escape' && checkInModalVisible.value) closeCheckIn()
+}
+window.addEventListener('keydown', onMedalKeydown)
+onUnmounted(() => window.removeEventListener('keydown', onMedalKeydown))
+
+// ===== 等级说明弹窗 =====
+const levelModalVisible = ref(false)
+
+function openLevel() {
+  // 打开前刷新积分，反映其他页面的加分
+  levelInfo.value = getLevelInfo()
+  levelModalVisible.value = true
+  playTapSound()
+}
+
+function closeLevel() {
+  levelModalVisible.value = false
+}
+
+function goAchievements() {
+  closeMedal()
+  router.push('/interactive')
 }
 
 // ===== 设置面板（底部弹层，内含资料编辑子视图）=====
@@ -226,6 +373,8 @@ function clearQaHistory() {
 }
 
 function onLogout() {
+  // 二次确认，防止误触直接退出
+  if (!window.confirm('确定要退出登录吗？')) return
   // TODO: 接入登出接口 / 清 token
   panelVisible.value = false
   router.push('/auth')
@@ -237,19 +386,18 @@ function onLogout() {
     <!-- 顶部红色用户区（全宽，顶到状态栏下） -->
     <div class="profile__header">
       <div class="profile__actions">
+        <button class="profile__icon-btn" title="每日签到" @click="openCheckIn">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+            stroke-linecap="round" stroke-linejoin="round">
+            <rect x="3" y="4" width="18" height="18" rx="2" />
+            <path d="M16 2v4M8 2v4M3 10h18" />
+          </svg>
+        </button>
         <button class="profile__icon-btn" title="设置" @click="onSettings">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
             stroke-linecap="round" stroke-linejoin="round">
             <circle cx="12" cy="12" r="3" />
             <path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 01-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.6 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.6a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09A1.65 1.65 0 0015 4.6a1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9c.24.56.81.96 1.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z" />
-          </svg>
-        </button>
-        <button class="profile__icon-btn" title="退出登录" @click="onLogout">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
-            stroke-linecap="round" stroke-linejoin="round">
-            <path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4" />
-            <path d="M16 17l5-5-5-5" />
-            <path d="M21 12H9" />
           </svg>
         </button>
       </div>
@@ -261,8 +409,15 @@ function onLogout() {
           <div class="profile__nickname">{{ user.nickname }}</div>
           <div class="profile__slogan">{{ user.slogan }}</div>
           <div class="profile__badges">
-            <span class="profile__badge profile__badge--level">
-              Lv {{ user.level }} {{ user.levelName }}
+            <span
+              class="profile__badge profile__badge--level"
+              role="button"
+              tabindex="0"
+              aria-label="查看等级说明"
+              @click="openLevel"
+              @keyup.enter="openLevel"
+            >
+              Lv {{ user.level }} {{ user.levelName }} ›
             </span>
             <span class="profile__badge profile__badge--medal">
               勋章 {{ user.medals.owned }}/{{ user.medals.total }}
@@ -283,10 +438,24 @@ function onLogout() {
     <section class="profile__card profile__medals">
       <div class="profile__section-title">
         <span>荣誉勋章墙</span>
-        <span class="profile__arrow">›</span>
+        <button
+          type="button"
+          class="profile__section-more-btn"
+          @click="router.push('/interactive')"
+        >
+          个人成就馆 <span class="profile__arrow">›</span>
+        </button>
       </div>
       <div class="profile__medal-list">
-        <div v-for="m in medals" :key="m.name" class="profile__medal">
+        <div
+          v-for="m in medals"
+          :key="m.name"
+          class="profile__medal"
+          role="button"
+          tabindex="0"
+          @click="openMedal(m)"
+          @keyup.enter="openMedal(m)"
+        >
           <div class="profile__medal-icon" :class="{ 'is-locked': !m.earned }" :style="{ color: medalColor(m) }">
             <svg v-if="m.icon === 'star'" viewBox="0 0 24 24" fill="currentColor">
               <path d="M12 2l2.9 6.3 6.9.8-5.1 4.7 1.4 6.8L12 17.8 5.9 20.6l1.4-6.8L2.2 9.1l6.9-.8L12 2z" />
@@ -323,7 +492,13 @@ function onLogout() {
     <section class="profile__card profile__orders">
       <div class="profile__section-title">
         <span>我的订单</span>
-        <span class="profile__arrow">›</span>
+        <button
+          type="button"
+          class="profile__section-more-btn"
+          @click="showToast('订单中心开发中，敬请期待')"
+        >
+          查看更多 <span class="profile__arrow">›</span>
+        </button>
       </div>
       <div class="profile__order-tabs">
         <span
@@ -367,6 +542,11 @@ function onLogout() {
         v-for="item in g.items"
         :key="item.id"
         class="profile__footprint-card"
+        :class="{ 'is-clickable': !!item.actionTo }"
+        role="button"
+        :tabindex="item.actionTo ? 0 : -1"
+        @click="onFootprintCard(item.actionTo)"
+        @keyup.enter="onFootprintCard(item.actionTo)"
       >
         <div class="profile__footprint-main">
           <div class="profile__footprint-title">{{ item.title }}</div>
@@ -385,6 +565,218 @@ function onLogout() {
         </div>
       </div>
     </section>
+
+    <!-- ===== 勋章详情弹窗 ===== -->
+    <Transition name="pf-fade">
+      <div v-if="selectedMedal" class="pf-medal-modal" @click.self="closeMedal">
+        <div
+          :key="selectedMedal.name"
+          class="pf-medal-card"
+          :class="{ 'is-locked': !selectedMedal.earned }"
+          role="dialog"
+          aria-modal="true"
+          :aria-label="`勋章：${selectedMedal.name}`"
+        >
+          <button class="pf-sheet__close" aria-label="关闭" @click="closeMedal">×</button>
+
+          <div
+            class="pf-medal-card__icon"
+            :style="{ color: medalColor(selectedMedal) }"
+          >
+            <svg v-if="selectedMedal.icon === 'star'" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M12 2l2.9 6.3 6.9.8-5.1 4.7 1.4 6.8L12 17.8 5.9 20.6l1.4-6.8L2.2 9.1l6.9-.8L12 2z" />
+            </svg>
+            <svg v-else-if="selectedMedal.icon === 'check'" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="12" cy="12" r="10" fill="currentColor" stroke="none" opacity="0.12" />
+              <path d="M8 12.5l2.8 2.8L16 10" />
+            </svg>
+            <svg v-else-if="selectedMedal.icon === 'trophy'" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M6 4h12v2a6 6 0 01-12 0V4zm0 2v0a4 4 0 008 0H6zm2 8h8l-1 6H9l-1-6zm-3-6h2v2a4 4 0 01-2-2zm14 0h-2v2a4 4 0 002-2z" />
+            </svg>
+            <svg v-else-if="selectedMedal.icon === 'map'" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M12 2a7 7 0 00-7 7c0 5.25 7 13 7 13s7-7.75 7-13a7 7 0 00-7-7zm0 9.5A2.5 2.5 0 1112 6.5a2.5 2.5 0 010 5z" />
+            </svg>
+            <svg v-else-if="selectedMedal.icon === 'fire'" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M13.5 2s4.5 4 4.5 8.5a6 6 0 01-12 0c0-2 1-3.5 1-3.5s2 2.5 3 2.5c0-3 3.5-7.5 3.5-7.5zM12 22a5 5 0 01-5-5c0-2 1-3.5 2.5-4.5.5 1.5 1.5 2.5 2.5 3 .5-2 1.5-3 2.5-3.5C16 12.5 17 14 17 16a5 5 0 01-5 6z" />
+            </svg>
+            <svg v-else-if="selectedMedal.icon === 'book'" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M4 4h6a3 3 0 013 3v13a2 2 0 00-2-2H4V4zm16 0h-6a3 3 0 00-3 3v13a2 2 0 012-2h7V4z" />
+            </svg>
+            <svg v-else-if="selectedMedal.icon === 'flag'" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M5 3h2v18H5V3zm2 3h12l-2 4 2 4H7V6z" />
+            </svg>
+            <svg v-else viewBox="0 0 24 24" fill="currentColor">
+              <path d="M17 9V7a5 5 0 00-10 0v2H5v13h14V9h-2zm-8-2a3 3 0 016 0v2H9V7z" />
+            </svg>
+          </div>
+
+          <h3 class="pf-medal-card__name">{{ selectedMedal.name }}</h3>
+          <span
+            class="pf-medal-card__status"
+            :class="selectedMedal.earned ? 'is-earned' : 'is-locked'"
+          >
+            {{ selectedMedal.earned ? '已点亮' : '未点亮' }}
+          </span>
+          <p class="pf-medal-card__desc">
+            {{ selectedMedal.desc ?? '继续探索红色之旅，解锁这枚荣誉勋章。' }}
+          </p>
+
+          <button type="button" class="pf-primary" @click="goAchievements">
+            {{ selectedMedal.earned ? '去个人成就馆' : '去点亮徽章' }}
+          </button>
+        </div>
+      </div>
+    </Transition>
+
+    <!-- ===== 每日签到弹窗 ===== -->
+    <Transition name="pf-fade">
+      <div v-if="checkInModalVisible" class="pf-medal-modal" @click.self="closeCheckIn">
+        <div class="pf-checkin-card" role="dialog" aria-modal="true" aria-label="每日签到">
+          <!-- 星火暗纹（极低透明度，不抢文字） -->
+          <div class="pf-checkin-card__pattern" aria-hidden="true" />
+
+          <button class="pf-sheet__close" aria-label="关闭" @click="closeCheckIn">×</button>
+
+          <!-- 标题区：金星 + 标题；右侧两行签到天数 -->
+          <header class="pf-checkin-card__head">
+            <div class="pf-checkin-card__brand">
+              <svg class="pf-checkin-card__star" viewBox="0 0 24 24" aria-hidden="true">
+                <path
+                  fill="currentColor"
+                  d="M12 17.27 18.18 21l-1.64-7.03L22 9.24l-7.19-.61L12 2 9.19 8.63 2 9.24l5.46 4.73L5.82 21z"
+                />
+              </svg>
+              <h3 class="pf-checkin-card__title">每日签到</h3>
+            </div>
+            <div class="pf-checkin-card__counts">
+              <span>连续 <b>{{ checkInState.streak }}</b> 天</span>
+              <span>累计 <b>{{ checkInState.totalDays }}</b> 天</span>
+            </div>
+          </header>
+
+          <!-- 签到按钮 + 星火粒子层 -->
+          <div class="pf-checkin-card__btn-wrap">
+            <button
+              type="button"
+              class="pf-checkin-card__btn"
+              :class="{ 'is-done': checkedToday }"
+              :disabled="checkedToday"
+              @click="onCheckIn"
+            >
+              <svg
+                v-if="checkedToday"
+                class="pf-checkin-card__check"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2.5"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              >
+                <path d="M20 6L9 17l-5-5" />
+              </svg>
+              {{ checkedToday ? '今日已签到' : `立即签到 · +${SIGN_IN_POINTS} 积分` }}
+            </button>
+            <div v-if="sparkleOn" class="pf-checkin-card__sparkles" aria-hidden="true">
+              <i
+                v-for="(s, i) in sparkles"
+                :key="i"
+                :style="{
+                  left: s.left + '%',
+                  width: s.size + 'px',
+                  height: s.size + 'px',
+                  background: s.color,
+                  animationDelay: s.delay + 's',
+                  animationDuration: s.dur + 's',
+                  '--dx': s.dx + 'px',
+                  '--dy': -s.rise + 'px',
+                }"
+              />
+            </div>
+          </div>
+
+          <!-- 名言引用卡片：逐字淡入 -->
+          <Transition name="pf-fade">
+            <blockquote v-if="checkedToday" class="pf-checkin-card__quote">
+              <p class="pf-checkin-card__quote-text">
+                <span
+                  v-for="(ch, i) in quoteChars"
+                  :key="i"
+                  :style="{ animationDelay: 0.15 + i * 0.05 + 's' }"
+                >{{ ch }}</span>
+              </p>
+              <footer
+                class="pf-checkin-card__quote-author"
+                :style="{ animationDelay: 0.15 + quoteChars.length * 0.05 + 0.1 + 's' }"
+              >—— {{ quote.author }}</footer>
+            </blockquote>
+          </Transition>
+        </div>
+      </div>
+    </Transition>
+
+    <!-- ===== 等级说明弹窗 ===== -->
+    <Transition name="pf-fade">
+      <div v-if="levelModalVisible" class="pf-medal-modal" @click.self="closeLevel">
+        <div class="pf-level-card" role="dialog" aria-modal="true" aria-label="等级说明">
+          <button class="pf-sheet__close" aria-label="关闭" @click="closeLevel">×</button>
+
+          <!-- 等级头图 -->
+          <div class="pf-level-card__hero">
+            <div class="pf-level-card__lv">Lv {{ levelInfo.level }}</div>
+            <div class="pf-level-card__name">{{ levelInfo.levelName }}</div>
+            <div class="pf-level-card__points">累计积分 {{ levelInfo.points }}</div>
+          </div>
+
+          <!-- 升级进度 -->
+          <div class="pf-level-progress">
+            <div class="pf-level-progress__bar">
+              <i :style="{ width: (levelInfo.progress * 100).toFixed(1) + '%' }" />
+            </div>
+            <p class="pf-level-progress__text">
+              <template v-if="levelInfo.nextNeed != null">
+                再获得 <strong>{{ levelInfo.remaining }}</strong> 积分升级到「{{ levelInfo.nextName }}」
+              </template>
+              <template v-else>已达最高等级，感谢你点亮红色之旅</template>
+            </p>
+          </div>
+
+          <!-- 获取途径 -->
+          <div class="pf-level-ways">
+            <span class="pf-level-ways__title">如何获得积分</span>
+            <div class="pf-level-ways__row">
+              <span>每日签到</span><b>+10</b>
+            </div>
+            <div class="pf-level-ways__row">
+              <span>通关沉浸式红色剧本</span><b>+30</b>
+            </div>
+            <div class="pf-level-ways__row">
+              <span>导览到达景点打卡</span><b>+5</b>
+            </div>
+            <div class="pf-level-ways__row">
+              <span>红色答题（即将上线）</span><b>+10</b>
+            </div>
+          </div>
+
+          <!-- 等级阶梯 -->
+          <div class="pf-level-rules">
+            <span class="pf-level-rules__title">等级阶梯</span>
+            <div
+              v-for="r in LEVEL_RULES"
+              :key="r.level"
+              class="pf-level-rule"
+              :class="{ 'is-current': r.level === levelInfo.level, 'is-reached': r.level < levelInfo.level }"
+              :title="r.perk"
+            >
+              <span class="pf-level-rule__lv">Lv{{ r.level }}</span>
+              <span class="pf-level-rule__name">{{ r.name }}</span>
+              <span class="pf-level-rule__perk">{{ r.perk }}</span>
+              <span class="pf-level-rule__need">{{ r.need }} 积分</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </Transition>
 
     <!-- ===== 设置底部弹层 ===== -->
     <Transition name="pf-fade">
@@ -456,8 +848,6 @@ function onLogout() {
                 <span class="pf-row__chevron">›</span>
               </div>
             </div>
-
-            <div class="pf-version">红色文旅 v0.1.0</div>
           </template>
 
           <!-- 头像选择 -->
@@ -705,6 +1095,12 @@ function onLogout() {
     background: linear-gradient(90deg, #f5cd6b, @color-accent);
     color: #7a5a10;
     font-weight: 700;
+    cursor: pointer;
+    transition: transform 0.15s ease;
+
+    &:active {
+      transform: scale(0.94);
+    }
   }
 
   &__badge--medal {
@@ -712,6 +1108,8 @@ function onLogout() {
     color: #fff;
     font-weight: 600;
   }
+
+  // ===== 每日签到弹窗（卡片样式见 .pf-checkin-card） =====
 
   &__stats {
     display: flex;
@@ -765,6 +1163,24 @@ function onLogout() {
     line-height: 1;
   }
 
+  // 区块标题右侧"更多"按钮（勋章墙 → 互动中心 / 订单 → toast）
+  &__section-more-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+    padding: 4px 0 4px 8px;
+    border: none;
+    background: transparent;
+    font-size: @font-size-sm;
+    color: @color-text-secondary;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+
+    &:active {
+      color: @color-primary;
+    }
+  }
+
   // ===== 勋章 =====
   &__medal-list {
     display: grid;
@@ -778,9 +1194,16 @@ function onLogout() {
     flex-direction: column;
     align-items: center;
     gap: @spacing-xs;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+
+    &:active .profile__medal-icon {
+      transform: scale(0.92);
+    }
   }
 
   &__medal-icon {
+    transition: transform 0.15s;
     width: 48px;
     height: 48px;
     border-radius: 50%;
@@ -953,6 +1376,15 @@ function onLogout() {
     align-items: center;
     justify-content: space-between;
     gap: @spacing-md;
+    -webkit-tap-highlight-color: transparent;
+
+    &.is-clickable {
+      cursor: pointer;
+
+      &:active {
+        transform: scale(0.99);
+      }
+    }
   }
 
   &__footprint-main {
@@ -1215,13 +1647,6 @@ function onLogout() {
   }
 }
 
-.pf-version {
-  text-align: center;
-  font-size: @font-size-sm;
-  color: @color-text-secondary;
-  padding: @spacing-sm 0;
-}
-
 // 头像选择
 .pf-avatar-grid {
   display: grid;
@@ -1465,5 +1890,478 @@ function onLogout() {
 .pf-toast-enter-from,
 .pf-toast-leave-to {
   opacity: 0;
+}
+
+// ===== 勋章详情弹窗 =====
+.pf-medal-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: @spacing-lg;
+  background: rgba(0, 0, 0, 0.5);
+  backdrop-filter: blur(2px);
+}
+
+// ===== 等级说明弹窗 =====
+.pf-level-card {
+  position: relative;
+  width: 100%;
+  max-width: 320px;
+  max-height: 78vh;
+  overflow-y: auto;
+  padding: 24px @spacing-md 18px;
+  border-radius: 20px;
+  background: #ffffff;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.4);
+  text-align: center;
+  animation: pf-medal-pop 0.35s cubic-bezier(0.22, 1.2, 0.36, 1) both;
+
+  &__hero {
+    padding: 16px @spacing-md 14px;
+    border-radius: 14px;
+    background: linear-gradient(150deg, @color-primary 0%, @color-primary-active 100%);
+    color: #fff;
+  }
+  &__lv {
+    font-size: 26px;
+    font-weight: 800;
+    letter-spacing: 1px;
+  }
+  &__name {
+    margin-top: 2px;
+    font-size: @font-size-lg;
+    font-weight: 600;
+  }
+  &__points {
+    margin-top: 6px;
+    font-size: @font-size-sm;
+    opacity: 0.88;
+  }
+}
+
+.pf-level-progress {
+  margin: 14px 0 4px;
+  text-align: left;
+
+  &__bar {
+    height: 10px;
+    border-radius: 5px;
+    background: @color-primary-light;
+    overflow: hidden;
+
+    i {
+      display: block;
+      height: 100%;
+      border-radius: 5px;
+      background: linear-gradient(90deg, @color-primary 0%, #e8555f 100%);
+      transition: width 0.6s ease;
+    }
+  }
+  &__text {
+    margin-top: 6px;
+    font-size: @font-size-sm;
+    color: @color-text-secondary;
+
+    strong {
+      color: @color-primary;
+    }
+  }
+}
+
+// 积分获取途径
+.pf-level-ways {
+  margin-top: 12px;
+  text-align: left;
+
+  &__title {
+    display: block;
+    margin-bottom: 4px;
+    font-size: @font-size-base;
+    font-weight: 600;
+    color: @color-text-primary;
+  }
+  &__row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 7px 0;
+    border-bottom: 1px dashed @color-border;
+    font-size: @font-size-sm;
+    color: @color-text-regular;
+
+    b {
+      color: @color-primary;
+      font-weight: 700;
+    }
+  }
+}
+
+// 等级阶梯
+.pf-level-rules {
+  margin-top: 14px;
+  text-align: left;
+
+  &__title {
+    display: block;
+    margin-bottom: 6px;
+    font-size: @font-size-base;
+    font-weight: 600;
+    color: @color-text-primary;
+  }
+}
+.pf-level-rule {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 10px;
+  border-radius: 10px;
+  font-size: @font-size-sm;
+  color: @color-text-secondary;
+
+  &__lv {
+    width: 38px;
+    flex-shrink: 0;
+    font-weight: 700;
+  }
+  &__name {
+    flex-shrink: 0;
+    font-weight: 600;
+    color: @color-text-regular;
+  }
+  &__perk {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  &__need {
+    flex-shrink: 0;
+  }
+
+  // 已达成
+  &.is-reached {
+    .pf-level-rule__lv {
+      color: @color-success;
+    }
+  }
+  // 当前等级
+  &.is-current {
+    background: @color-primary-light;
+    color: @color-primary;
+    font-weight: 600;
+
+    .pf-level-rule__lv,
+    .pf-level-rule__name,
+    .pf-level-rule__need {
+      color: @color-primary;
+    }
+  }
+}
+
+// ===== 每日签到弹窗 =====
+// 庄重典雅风：暗红主色、金色点缀、正文深灰、引用棕褐；动效克制（淡入上移 / 星火飘散 / 逐字浮现）
+@pf-checkin-dark-red: #8a1e2b;
+@pf-checkin-tan: #9a7b4f;
+
+@keyframes pf-rise-in {
+  from {
+    opacity: 0;
+    transform: translateY(16px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes pf-char-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+// 星火粒子：缓慢向上飘散、渐隐，水平轻微漂移
+@keyframes pf-spark-float {
+  0% {
+    opacity: 0;
+    transform: translate(0, 0) scale(1) rotate(0deg);
+  }
+  12% {
+    opacity: 0.9;
+  }
+  100% {
+    opacity: 0;
+    transform: translate(var(--dx, 0px), var(--dy, -150px)) scale(0.35) rotate(160deg);
+  }
+}
+
+.pf-checkin-card {
+  position: relative;
+  width: 100%;
+  max-width: 320px;
+  padding: 24px @spacing-lg 22px;
+  border-radius: 24px;
+  background: #ffffff;
+  box-shadow:
+    0 24px 64px rgba(60, 12, 16, 0.22),
+    0 2px 8px rgba(60, 12, 16, 0.08);
+  overflow: hidden;
+  animation: pf-rise-in 0.28s ease-out both;
+
+  // 星火暗纹：极低透明度的金/红微光点阵，铺满卡片底层
+  &__pattern {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    background:
+      radial-gradient(circle at 22% 26%, rgba(212, 175, 55, 0.1) 0 1.6px, transparent 2.6px),
+      radial-gradient(circle at 72% 64%, rgba(138, 30, 43, 0.08) 0 1.4px, transparent 2.4px);
+    background-size:
+      46px 46px,
+      38px 38px;
+    background-position:
+      0 0,
+      19px 23px;
+    opacity: 0.5;
+  }
+
+  // 标题区：金星 + 暗红标题；右侧两行小字
+  &__head {
+    position: relative;
+    z-index: 1;
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: @spacing-md;
+  }
+  &__brand {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  &__star {
+    width: 22px;
+    height: 22px;
+    color: @color-accent;
+    flex-shrink: 0;
+    filter: drop-shadow(0 1px 2px rgba(212, 175, 55, 0.35));
+  }
+  &__title {
+    margin: 0;
+    font-size: 20px;
+    font-weight: 800;
+    letter-spacing: 1px;
+    color: @pf-checkin-dark-red;
+  }
+  &__counts {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 2px;
+    padding-top: 2px;
+    font-size: @font-size-sm;
+    color: @color-text-secondary;
+    white-space: nowrap;
+
+    b {
+      color: @pf-checkin-dark-red;
+      font-weight: 700;
+    }
+  }
+
+  // 签到按钮（含粒子层容器）
+  &__btn-wrap {
+    position: relative;
+    z-index: 1;
+    margin-top: 18px;
+  }
+  &__btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    width: 100%;
+    border: none;
+    border-radius: 24px;
+    padding: 13px 0;
+    font-size: @font-size-base;
+    font-weight: 700;
+    letter-spacing: 2px;
+    cursor: pointer;
+    color: #fff;
+    background: linear-gradient(135deg, @color-primary 0%, @pf-checkin-dark-red 100%);
+    box-shadow: 0 6px 16px rgba(138, 30, 43, 0.28);
+    transition:
+      transform 0.2s ease,
+      box-shadow 0.2s ease,
+      background 0.2s ease;
+
+    // 未签到：hover 淡红放大
+    &:not(:disabled):hover {
+      transform: scale(1.03);
+      box-shadow: 0 8px 22px rgba(138, 30, 43, 0.34);
+    }
+    &:not(:disabled):active {
+      transform: scale(0.97);
+    }
+
+    // 已签到：白底 + 灰对勾，不可点击
+    &.is-done {
+      background: #ffffff;
+      border: 1px solid @color-border;
+      color: @color-text-secondary;
+      box-shadow: none;
+      cursor: default;
+      letter-spacing: 4px;
+    }
+  }
+  &__check {
+    width: 16px;
+    height: 16px;
+  }
+
+  // 星火粒子层：覆盖按钮上方区域
+  &__sparkles {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 18px;
+    height: 0;
+    pointer-events: none;
+
+    i {
+      position: absolute;
+      bottom: 0;
+      border-radius: 50%;
+      opacity: 0;
+      animation: pf-spark-float linear both;
+    }
+  }
+
+  // 名言引用卡片：浅米黄圆角，棕褐文字，作者右下
+  &__quote {
+    position: relative;
+    z-index: 1;
+    margin: 16px 0 0;
+    padding: 14px 16px 12px;
+    border-radius: 14px;
+    background: #faf4e8;
+    border-left: 3px solid @color-accent;
+  }
+  &__quote-text {
+    margin: 0;
+    font-family: 'Kaiti SC', 'STKaiti', 'KaiTi', 'SimSun', serif;
+    font-size: @font-size-base;
+    line-height: 1.9;
+    color: @pf-checkin-tan;
+
+    span {
+      display: inline-block;
+      opacity: 0;
+      animation: pf-char-in 0.45s ease both;
+    }
+  }
+  &__quote-author {
+    display: block;
+    margin-top: 4px;
+    text-align: right;
+    font-size: @font-size-sm;
+    color: fade(@pf-checkin-tan, 80%);
+    animation: pf-char-in 0.5s ease both;
+  }
+}
+
+.pf-medal-card {
+  position: relative;
+  width: 100%;
+  max-width: 300px;
+  padding: 26px @spacing-lg 22px;
+  border-radius: 20px;
+  background: linear-gradient(180deg, #fffdf7 0%, #ffffff 60%, #fff8ec 100%);
+  box-shadow:
+    0 20px 60px rgba(0, 0, 0, 0.4),
+    0 0 0 1px rgba(212, 175, 55, 0.25);
+  text-align: center;
+  animation: pf-medal-pop 0.35s cubic-bezier(0.22, 1.2, 0.36, 1) both;
+
+  &.is-locked {
+    background: linear-gradient(180deg, #f8f8f8 0%, #ffffff 60%, #f3f3f3 100%);
+    box-shadow:
+      0 20px 60px rgba(0, 0, 0, 0.32),
+      0 0 0 1px rgba(0, 0, 0, 0.06);
+  }
+
+  &__icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 76px;
+    height: 76px;
+    margin: 0 auto @spacing-sm;
+    border-radius: 50%;
+    background: @color-bg-page;
+
+    svg {
+      width: 38px;
+      height: 38px;
+    }
+  }
+
+  &__name {
+    margin: 0 0 8px;
+    font-size: 19px;
+    font-weight: 700;
+    color: #5a4310;
+    letter-spacing: 1px;
+  }
+
+  &__status {
+    display: inline-block;
+    padding: 3px 14px;
+    border-radius: 12px;
+    font-size: @font-size-sm;
+    font-weight: 600;
+
+    &.is-earned {
+      background: rgba(212, 175, 55, 0.16);
+      color: #a07f1c;
+    }
+
+    &.is-locked {
+      background: rgba(0, 0, 0, 0.06);
+      color: @color-text-secondary;
+    }
+  }
+
+  &__desc {
+    margin: 12px 0 0;
+    font-size: @font-size-base;
+    line-height: 1.7;
+    color: @color-text-regular;
+  }
+
+  .pf-primary {
+    margin-top: @spacing-md;
+  }
+}
+
+@keyframes pf-medal-pop {
+  from {
+    opacity: 0;
+    transform: scale(0.7);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
 }
 </style>
