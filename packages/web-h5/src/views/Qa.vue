@@ -2,10 +2,18 @@
 /**
  * AI 智慧讲解员（智能问答）
  * 对话式问答：AI 头像气泡 + 用户气泡 + 来源引用
- * 能力：打字机输出、推荐问题、本地历史会话；数据暂为 Mock
+ * 能力：打字机输出、推荐问题（接口获取）、语音提问（STT）、TTS 播报；接口失败降级本地知识
  */
 import { computed, nextTick, onMounted, onUnmounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import {
+  askAi,
+  extractSourceTitle,
+  getRecommendations,
+  resolveTtsUrl,
+  speechToText,
+} from '@/api/qa'
+import { speak, stopSpeak } from '@/utils/narrator'
 import {
   RECOMMEND_QUESTIONS,
   WELCOME_MESSAGE,
@@ -30,8 +38,22 @@ const typing = ref(false)
 const toastText = ref('')
 const sessionId = ref('')
 
+/** 推荐问题：接口获取，失败沿用本地推荐 */
+const suggestQuestions = ref<string[]>(RECOMMEND_QUESTIONS)
+
+// ===== TTS 播放 / 语音提问（STT）状态 =====
+let audioEl: HTMLAudioElement | null = null
+let mediaStream: MediaStream | null = null
+let mediaRecorder: MediaRecorder | null = null
+let recordChunks: Blob[] = []
+let recordTimer: ReturnType<typeof setInterval> | null = null
+/** 单段录音上限（秒），防止忘记关闭一直录 */
+const MAX_RECORD_SECONDS = 60
+const recording = ref(false)
+const recordSeconds = ref(0)
+const sttPending = ref(false)
+
 let typeTimer: ReturnType<typeof setInterval> | null = null
-let thinkTimer: ReturnType<typeof setTimeout> | null = null
 let toastTimer: ReturnType<typeof setTimeout> | null = null
 
 const bodyRef = ref<HTMLElement | null>(null)
@@ -47,7 +69,13 @@ const pageStyle = computed(() =>
 const showSuggest = computed(
   () => !typing.value && !messages.value.some((m) => m.role === 'user'),
 )
-const canSend = computed(() => inputText.value.trim().length > 0 && !typing.value)
+const canSend = computed(
+  () =>
+    inputText.value.trim().length > 0 &&
+    !typing.value &&
+    !recording.value &&
+    !sttPending.value,
+)
 
 function scrollToBottom() {
   nextTick(() => {
@@ -74,13 +102,17 @@ function persist(firstQuestion?: string) {
 }
 
 /**
- * 提问：推入用户消息 → AI 打字机回答
+ * 提问：推入用户消息 → 调用 /ask → 打字机输出 → 播报语音
+ * 接口失败时降级本地知识库（mock），保证问答始终可用
  * @param silent 路由带入问题等非用户手势触发时不播放发送音
  */
-function ask(raw?: string, silent = false) {
+async function ask(raw?: string, silent = false) {
   const text = (raw ?? inputText.value).trim()
   if (!text || typing.value) return
   if (!silent) playTapSound()
+
+  // 新一轮提问前停止上一轮的音频/播报
+  stopPlaying()
 
   if (!sessionId.value) sessionId.value = createSessionId()
   const isFirstQuestion = !messages.value.some((m) => m.role === 'user')
@@ -89,43 +121,149 @@ function ask(raw?: string, silent = false) {
   inputText.value = ''
   scrollToBottom()
 
-  // AI 占位消息：先"思考"再逐字输出
+  // AI 占位消息：请求期间显示"思考中"，返回后逐字输出
   const aiMsg: QaMessage = { role: 'ai', content: '', time: Date.now() }
   messages.value.push(aiMsg)
   typing.value = true
   scrollToBottom()
 
-  const answer = getAnswer(text)
+  let answerText = ''
+  let audioUrl: string | null = null
+  try {
+    const res = await askAi({ question: text, useVoice: true })
+    answerText = res.answer
+    audioUrl = res.audioUrl
+    aiMsg.source = extractSourceTitle(res.sources)
+  } catch {
+    // 后端未启动 / 接口异常：拦截器已提示错误，此处降级本地知识
+    const fallback = getAnswer(text)
+    answerText = fallback.content
+    aiMsg.source = fallback.source?.title
+  }
+  if (!answerText) answerText = getAnswer(text).content
 
-  thinkTimer = setTimeout(() => {
-    let i = 0
-    typeTimer = setInterval(() => {
-      // 每次追加 2 个字，长回答也能较快播完
-      i = Math.min(i + 2, answer.content.length)
-      aiMsg.content = answer.content.slice(0, i)
+  let i = 0
+  typeTimer = setInterval(() => {
+    // 每次追加 2 个字，长回答也能较快播完
+    i = Math.min(i + 2, answerText.length)
+    aiMsg.content = answerText.slice(0, i)
+    scrollToBottom()
+    if (i >= answerText.length) {
+      if (typeTimer) clearInterval(typeTimer)
+      typeTimer = null
+      typing.value = false
+      persist(isFirstQuestion ? text : undefined)
+      // AI 回答输出完成：柔和"叮咚"提示可读
+      playScoreSound()
       scrollToBottom()
-      if (i >= answer.content.length) {
-        if (typeTimer) clearInterval(typeTimer)
-        typeTimer = null
-        aiMsg.source = answer.source?.title
-        typing.value = false
-        persist(isFirstQuestion ? text : undefined)
-        // AI 回答输出完成：柔和"叮咚"提示可读
-        playScoreSound()
-        scrollToBottom()
+      // 语音播报：后端 TTS 音频优先，未生成时浏览器合成朗读
+      if (audioUrl) {
+        playTtsAudio(audioUrl, answerText)
+      } else {
+        speak(answerText, 'male')
       }
-    }, 30)
-  }, 500)
+    }
+  }, 30)
 }
 
-function onMic() {
-  showToast('语音提问即将上线，敬请期待')
+/** 播放后端 TTS 音频；音频不可达时退回浏览器合成朗读 */
+function playTtsAudio(url: string, fallbackText: string) {
+  audioEl?.pause()
+  audioEl = new Audio(resolveTtsUrl(url))
+  audioEl.onerror = () => speak(fallbackText, 'male')
+  audioEl.play().catch(() => speak(fallbackText, 'male'))
+}
+
+/** 停止当前播报（音频 + 语音合成） */
+function stopPlaying() {
+  stopSpeak()
+  if (audioEl) {
+    audioEl.onerror = null
+    audioEl.pause()
+    audioEl.src = ''
+    audioEl = null
+  }
+}
+
+// ===== 语音提问：MediaRecorder 录音 → /stt 转文字 → 自动提问 =====
+
+/** 点击麦克风：开始/结束录音 */
+async function toggleRecord() {
+  if (sttPending.value) return
+  if (recording.value) {
+    stopRecording()
+    return
+  }
+  if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === 'undefined') {
+    showToast('当前环境不支持语音输入')
+    return
+  }
+  try {
+    mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true })
+  } catch {
+    showToast('无法访问麦克风，请检查权限')
+    return
+  }
+  recordChunks = []
+  mediaRecorder = new MediaRecorder(mediaStream)
+  mediaRecorder.ondataavailable = (e) => {
+    if (e.data.size > 0) recordChunks.push(e.data)
+  }
+  mediaRecorder.onstop = handleRecordStop
+  mediaRecorder.start()
+  recording.value = true
+  recordSeconds.value = 0
+  recordTimer = setInterval(() => {
+    recordSeconds.value++
+    if (recordSeconds.value >= MAX_RECORD_SECONDS) stopRecording()
+  }, 1000)
+}
+
+function stopRecording() {
+  if (recordTimer) {
+    clearInterval(recordTimer)
+    recordTimer = null
+  }
+  recording.value = false
+  if (mediaRecorder && mediaRecorder.state !== 'inactive') mediaRecorder.stop()
+}
+
+/** 录音停止：释放设备 → 上传识别 → 识别文本直接提问 */
+async function handleRecordStop() {
+  mediaStream?.getTracks().forEach((t) => t.stop())
+  mediaStream = null
+  mediaRecorder = null
+  const blob = new Blob(recordChunks, { type: recordChunks[0]?.type || 'audio/webm' })
+  recordChunks = []
+  if (blob.size < 1024) {
+    showToast('没有录到声音，请重试')
+    return
+  }
+  sttPending.value = true
+  try {
+    const res = await speechToText(blob)
+    const text = (res.text ?? '').trim()
+    if (text) {
+      ask(text)
+    } else {
+      showToast('没有听清，请再说一次')
+    }
+  } catch {
+    showToast('语音识别失败，请重试')
+  } finally {
+    sttPending.value = false
+  }
 }
 
 function onMainButton() {
+  // 录音中点击发送键：结束录音并进入识别
+  if (recording.value) {
+    stopRecording()
+    return
+  }
   if (canSend.value) {
     ask()
-  } else if (!typing.value) {
+  } else if (!typing.value && !sttPending.value) {
     showToast('试试下面的推荐问题吧')
   }
 }
@@ -163,14 +301,26 @@ onMounted(() => {
     ask(q.trim(), true)
   }
 
+  // 推荐问题：后端获取，失败静默沿用本地推荐
+  getRecommendations()
+    .then((list) => {
+      if (Array.isArray(list) && list.length > 0) suggestQuestions.value = list
+    })
+    .catch(() => {})
+
   window.visualViewport?.addEventListener('resize', onViewportChange)
   window.visualViewport?.addEventListener('scroll', onViewportChange)
 })
 
 onUnmounted(() => {
   if (typeTimer) clearInterval(typeTimer)
-  if (thinkTimer) clearTimeout(thinkTimer)
   if (toastTimer) clearTimeout(toastTimer)
+  // 停止播报与录音
+  stopPlaying()
+  if (mediaRecorder) mediaRecorder.onstop = null
+  stopRecording()
+  mediaStream?.getTracks().forEach((t) => t.stop())
+  mediaStream = null
   window.visualViewport?.removeEventListener('resize', onViewportChange)
   window.visualViewport?.removeEventListener('scroll', onViewportChange)
 })
@@ -248,7 +398,7 @@ onUnmounted(() => {
         <p class="qa-suggest__label">你可以问我</p>
         <div class="qa-suggest__list">
           <button
-            v-for="q in RECOMMEND_QUESTIONS"
+            v-for="q in suggestQuestions"
             :key="q"
             class="qa-suggest__item"
             @click="ask(q)"
@@ -262,8 +412,21 @@ onUnmounted(() => {
 
     <!-- 底部输入栏 -->
     <div class="qa-input">
-      <button class="qa-input__mic" aria-label="语音输入" @click="onMic">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"
+      <button
+        class="qa-input__mic"
+        :class="{
+          'is-recording': recording,
+          'is-pending': sttPending,
+        }"
+        :aria-label="recording ? '结束录音' : '语音输入'"
+        @click="toggleRecord"
+      >
+        <!-- 录音中显示停止方块，识别中显示旋转圈 -->
+        <svg v-if="recording" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+          stroke-width="2" stroke-linecap="round">
+          <rect x="7" y="7" width="10" height="10" rx="2" fill="currentColor" />
+        </svg>
+        <svg v-else viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"
           stroke-linecap="round" stroke-linejoin="round">
           <rect x="9" y="3" width="6" height="11" rx="3" />
           <path d="M5 11a7 7 0 0014 0" />
@@ -274,7 +437,14 @@ onUnmounted(() => {
         v-model="inputText"
         class="qa-input__field"
         type="text"
-        placeholder="输入您想问的问题..."
+        :disabled="recording || sttPending"
+        :placeholder="
+          recording
+            ? `正在录音 ${recordSeconds}s，点击麦克风结束`
+            : sttPending
+              ? '语音识别中...'
+              : '输入您想问的问题...'
+        "
         @focus="scrollToBottom"
         @keyup.enter="ask()"
       />
@@ -557,6 +727,18 @@ onUnmounted(() => {
     &:active {
       color: @color-primary;
     }
+
+    // 录音中：红色脉冲提示
+    &.is-recording {
+      color: #e02020;
+      animation: qa-pulse 1.2s infinite ease-in-out;
+    }
+    // 识别中：整体呼吸淡显
+    &.is-pending {
+      color: @color-primary;
+      animation: qa-pulse 1.2s infinite ease-in-out;
+      pointer-events: none;
+    }
   }
 
   &__field {
@@ -649,6 +831,15 @@ onUnmounted(() => {
   30% {
     transform: translateY(-4px);
     opacity: 1;
+  }
+}
+@keyframes qa-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.45;
   }
 }
 </style>

@@ -1,15 +1,16 @@
 <script setup lang="ts">
 /**
- * 红色剧本：暗哨行动（沉浸式剧本互动系统）
+ * 沉浸式剧本（按 ?scriptId= 加载 mockScripts 中对应剧本）
  * 流程：选择角色 → 剧情开场 → 任务循环（动作/问答/打卡，失败重试+引导）
  *      → 全部完成 → 结局剧情 → 解锁成就徽章 + 积分 + 分享/收藏
  * 数据暂为 Mock，动作识别/定位打卡后续接入 ai-engine
  */
 import { computed, onUnmounted, ref } from 'vue'
-import { useRouter } from 'vue-router'
-import { mockScript } from '@/mock/interaction'
+import { useRoute, useRouter } from 'vue-router'
+import { getBadgeById, getScriptById, mockScripts } from '@/mock/interaction'
 import type { ScriptTask } from '@/mock/interaction'
 import {
+  playBadgeShineSound,
   playCorrectSound,
   playFanfareSound,
   playScoreSound,
@@ -17,29 +18,37 @@ import {
   playWrongSound,
 } from '@/utils/sound'
 import { addPoints } from '@/utils/levelStorage'
+import { unlockBadge } from '@/utils/achievementStorage'
 
 const router = useRouter()
+const route = useRoute()
+
+// 当前剧本：按路由参数加载，无效/缺失时回退第一部可玩剧本
+const script = computed(
+  () => getScriptById(route.query.scriptId as string) ?? mockScripts.find((s) => !s.locked)!,
+)
+const rewardBadge = computed(() => getBadgeById(script.value.reward.badgeId))
 
 // ===== 流程状态机 =====
 type Stage = 'role' | 'intro' | 'tasks' | 'ending' | 'reward'
 const stage = ref<Stage>('role')
 const roleId = ref('')
-const role = computed(() => mockScript.roles.find((r) => r.id === roleId.value))
+const role = computed(() => script.value.roles.find((r) => r.id === roleId.value))
 
 const taskIndex = ref(0)
-const currentTask = computed(() => mockScript.tasks[taskIndex.value] as ScriptTask)
+const currentTask = computed(() => script.value.tasks[taskIndex.value] as ScriptTask)
 const score = ref(0)
 const overallProgress = computed(() => {
   if (stage.value === 'role' || stage.value === 'intro') return 0
   if (stage.value === 'ending' || stage.value === 'reward') return 100
-  return Math.round((taskIndex.value / mockScript.tasks.length) * 100)
+  return Math.round((taskIndex.value / script.value.tasks.length) * 100)
 })
 
 const stageLabel = computed(() => {
   switch (stage.value) {
     case 'role': return '选择角色'
     case 'intro': return '剧情开场'
-    case 'tasks': return `任务 ${taskIndex.value + 1}/${mockScript.tasks.length}`
+    case 'tasks': return `任务 ${taskIndex.value + 1}/${script.value.tasks.length}`
     case 'ending': return '结局'
     case 'reward': return '通关'
   }
@@ -102,7 +111,7 @@ function startScript() {
     return
   }
   stage.value = 'intro'
-  typewriter(mockScript.intro)
+  typewriter(script.value.intro)
 }
 
 // ===== 任务循环 =====
@@ -140,11 +149,11 @@ function completeTask(scoreDelaySec = 0) {
     quizCorrect.value = false
     showGuide.value = false
     checkinState.value = 'idle'
-    if (taskIndex.value < mockScript.tasks.length - 1) {
+    if (taskIndex.value < script.value.tasks.length - 1) {
       taskIndex.value++
     } else {
       stage.value = 'ending'
-      typewriter(mockScript.ending)
+      typewriter(script.value.ending)
     }
   }, 1000)
 }
@@ -197,7 +206,24 @@ function toReward() {
   addPoints(score.value)
   // 徽章解锁号角
   playFanfareSound()
+  // 写入解锁状态（互动中心徽章墙据此点亮）；仅首次解锁时错峰叠徽章闪耀音
+  const { isNew } = unlockBadge(script.value.reward.badgeId)
+  badgeIsNew.value = isNew
+  if (isNew) shineTimer = setTimeout(() => playBadgeShineSound(), 900)
+  // 撒花彩带（确定性伪随机，避免每次渲染位置跳动）
+  confetti.value = Array.from({ length: 28 }, (_, i) => ({
+    left: `${(i * 37) % 100}%`,
+    bg: CONFETTI_COLORS[i % CONFETTI_COLORS.length],
+    delay: `${((i * 13) % 10) / 10}s`,
+    dur: `${2.4 + ((i * 7) % 10) / 8}s`,
+  }))
 }
+
+// ===== 通关奖励：解锁动画与撒花 =====
+const badgeIsNew = ref(false)
+const confetti = ref<Array<{ left: string; bg: string; delay: string; dur: string }>>([])
+const CONFETTI_COLORS = ['#c41e3a', '#d4af37', '#e8c96a', '#f5f0e6', '#e2703a', '#8f1d2c']
+let shineTimer: ReturnType<typeof setTimeout> | undefined
 
 function onShare() {
   playTapSound()
@@ -211,12 +237,12 @@ function onCollect() {
 }
 
 function backToInteractive() {
-  router.push('/interactive')
+  router.push('/interactive/scripts')
 }
 
 function onClose() {
   if (window.history.length > 1) router.back()
-  else router.push('/interactive')
+  else router.push('/interactive/scripts')
 }
 
 function onHelp() {
@@ -226,6 +252,7 @@ function onHelp() {
 onUnmounted(() => {
   if (typeTimer) clearInterval(typeTimer)
   if (toastTimer) clearTimeout(toastTimer)
+  if (shineTimer) clearTimeout(shineTimer)
 })
 </script>
 
@@ -239,7 +266,7 @@ onUnmounted(() => {
         </svg>
       </button>
       <span class="topbar__pill">
-        <i class="dot" />{{ mockScript.title }} · {{ stageLabel }}
+        <i class="dot" />{{ script.title }} · {{ stageLabel }}
       </span>
       <button class="icon-btn icon-btn--round" aria-label="玩法说明" @click="onHelp">?</button>
     </div>
@@ -255,7 +282,7 @@ onUnmounted(() => {
       <p class="stage__sub">每位角色都将看到专属剧情视角</p>
       <div class="role-list">
         <div
-          v-for="r in mockScript.roles"
+          v-for="r in script.roles"
           :key="r.id"
           class="role-card"
           :class="{ 'is-picked': roleId === r.id }"
@@ -416,7 +443,23 @@ onUnmounted(() => {
 
     <!-- ===== 阶段五：通关奖励 ===== -->
     <div v-else class="stage stage--reward">
-      <p class="reward__caption">恭喜通关，解锁成就徽章</p>
+      <!-- 撒花彩带 -->
+      <div class="confetti" aria-hidden="true">
+        <span
+          v-for="(c, i) in confetti"
+          :key="i"
+          class="confetti__piece"
+          :style="{
+            left: c.left,
+            background: c.bg,
+            animationDelay: c.delay,
+            animationDuration: c.dur,
+          }"
+        />
+      </div>
+      <p class="reward__caption">
+        {{ badgeIsNew ? '恭喜通关，解锁新成就徽章' : '恭喜通关' }}
+      </p>
       <div class="reward__badge">
         <span class="reward__badge-circle">
           <svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -424,7 +467,7 @@ onUnmounted(() => {
             <path d="M15.5 13l1.5 8-5-3-5 3 1.5-8" />
           </svg>
         </span>
-        <span class="reward__badge-name">{{ mockScript.reward.badge.name }}</span>
+        <span class="reward__badge-name">{{ rewardBadge?.name ?? '成就徽章' }}</span>
       </div>
       <div class="reward__score">
         <span>本局获得</span>
@@ -445,7 +488,7 @@ onUnmounted(() => {
           {{ collected ? '已收藏' : '收藏' }}
         </button>
       </div>
-      <button class="primary-btn" @click="backToInteractive">返回互动中心</button>
+      <button class="primary-btn" @click="backToInteractive">返回剧本列表</button>
     </div>
 
     <!-- 轻提示 -->
@@ -971,7 +1014,77 @@ onUnmounted(() => {
 
 // ===== 通关奖励 =====
 .stage--reward {
+  position: relative;
   justify-content: center;
+  overflow: hidden;
+}
+
+// ===== 撒花彩带 =====
+.confetti {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+
+  &__piece {
+    position: absolute;
+    top: -14px;
+    width: 8px;
+    height: 14px;
+    border-radius: 2px;
+    opacity: 0.95;
+    animation: confetti-fall 3s ease-in forwards;
+  }
+}
+
+@keyframes confetti-fall {
+  0% {
+    transform: translateY(-10vh) rotate(0deg);
+    opacity: 1;
+  }
+  100% {
+    transform: translateY(110vh) rotate(720deg);
+    opacity: 0.5;
+  }
+}
+
+// ===== 奖励元素错峰入场 =====
+@keyframes reward-caption-in {
+  from {
+    opacity: 0;
+    transform: translateY(14px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+// 徽章飞入：下方升起 + 翻转回弹落定
+@keyframes badge-fly-in {
+  0% {
+    opacity: 0;
+    transform: translateY(60px) rotateY(180deg) scale(0.4);
+  }
+  55% {
+    opacity: 1;
+    transform: translateY(-8px) rotateY(-20deg) scale(1.12);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) rotateY(0) scale(1);
+  }
+}
+
+@keyframes reward-pop-in {
+  0% {
+    opacity: 0;
+    transform: scale(0.6);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
 }
 
 .reward {
@@ -979,6 +1092,7 @@ onUnmounted(() => {
     margin: 0 0 @spacing-lg;
     font-size: @font-size-lg;
     color: rgba(255, 255, 255, 0.8);
+    animation: reward-caption-in 0.45s ease-out both;
   }
 
   &__badge {
@@ -997,7 +1111,10 @@ onUnmounted(() => {
     border-radius: 50%;
     background: linear-gradient(135deg, @color-accent 0%, darken(@color-accent, 15%) 100%);
     box-shadow: 0 0 0 8px rgba(212, 175, 55, 0.15), 0 8px 30px rgba(212, 175, 55, 0.45);
-    animation: glow 1.6s ease-in-out infinite;
+    // 先播飞入入场（transform），落定后接呼吸光环（box-shadow），互不冲突
+    animation:
+      badge-fly-in 0.75s cubic-bezier(0.3, 1.1, 0.35, 1) 0.15s both,
+      glow 1.6s ease-in-out 1s infinite;
 
     svg {
       width: 44px;
@@ -1009,6 +1126,7 @@ onUnmounted(() => {
     font-size: @font-size-lg;
     font-weight: 700;
     color: @color-accent;
+    animation: reward-pop-in 0.4s cubic-bezier(0.22, 1.2, 0.36, 1) 0.6s both;
   }
 
   &__score {
@@ -1018,6 +1136,7 @@ onUnmounted(() => {
     margin: @spacing-lg 0;
     color: rgba(255, 255, 255, 0.6);
     font-size: @font-size-base;
+    animation: reward-caption-in 0.4s ease-out 0.7s both;
 
     strong {
       font-size: 28px;
@@ -1029,6 +1148,7 @@ onUnmounted(() => {
     display: flex;
     gap: @spacing-md;
     width: 100%;
+    animation: reward-caption-in 0.4s ease-out 0.85s both;
   }
 }
 
@@ -1036,6 +1156,11 @@ onUnmounted(() => {
   50% {
     box-shadow: 0 0 0 14px rgba(212, 175, 55, 0.08), 0 8px 40px rgba(212, 175, 55, 0.6);
   }
+}
+
+// 奖励页主按钮最后入场
+.stage--reward .primary-btn {
+  animation: reward-caption-in 0.4s ease-out 1s both;
 }
 
 .reward-btn {
