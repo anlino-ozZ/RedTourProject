@@ -3,11 +3,7 @@
 // 列表（分类筛选）→ 详情（图片轮播）→ 购买意向登记弹窗（离线场景不支持在线支付）
 import { computed, ref } from 'vue'
 import { RedButton, RedDialog } from '@red-tour-project/common'
-import {
-  products,
-  type Product,
-  type ProductCategory,
-} from '@/mock/product'
+import { getProducts, submitOrder as submitProductOrder, type Product, type ProductCategory } from '@/api/products'
 import { playCorrectSound, playWrongSound } from '@/utils/sound'
 
 type CategoryFilter = 'all' | ProductCategory
@@ -22,17 +18,20 @@ const tabs: { key: CategoryFilter; label: string }[] = [
 const activeCategory = ref<CategoryFilter>('all')
 /** 当前查看详情的商品（null = 列表视图） */
 const selected = ref<Product | null>(null)
+/** 商品列表 */
+const products = ref<Product[]>([])
+getProducts().then((list) => (products.value = list))
 
 const filteredProducts = computed(() =>
   activeCategory.value === 'all'
-    ? products
-    : products.filter((p) => p.category === activeCategory.value),
+    ? products.value
+    : products.value.filter((p) => p.category === activeCategory.value),
 )
 
 function countOf(key: CategoryFilter): number {
   return key === 'all'
-    ? products.length
-    : products.filter((p) => p.category === key).length
+    ? products.value.length
+    : products.value.filter((p) => p.category === key).length
 }
 
 function categoryLabel(p: Product): string {
@@ -135,30 +134,29 @@ function validate(): boolean {
   return true
 }
 
-function submitOrder() {
+async function submitOrder() {
   if (submitting.value) return
   if (!validate()) {
     // 校验失败：低沉下行音提示修正
     playWrongSound()
     return
   }
+  if (!selected.value) return
   submitting.value = true
-  // mock 提交：模拟网络耗时并防止重复提交（H-07 替换为真实接口）
-  window.setTimeout(() => {
-    const now = new Date()
-    const day = [
-      now.getFullYear(),
-      String(now.getMonth() + 1).padStart(2, '0'),
-      String(now.getDate()).padStart(2, '0'),
-    ].join('')
-    orderResult.value = {
-      orderId: Number(`${day}${String(Date.now() % 100000).padStart(5, '0')}`),
-      createdAt: now.toLocaleString(),
-    }
-    submitting.value = false
+  try {
+    orderResult.value = await submitProductOrder({
+      productId: selected.value.id,
+      phone: phone.value.trim(),
+      quantity: quantity.value,
+      remark: remark.value || undefined,
+    })
     // 登记成功：上行琶音正反馈
     playCorrectSound()
-  }, 600)
+  } catch {
+    // 接口异常：保持弹窗可重试
+  } finally {
+    submitting.value = false
+  }
 }
 </script>
 

@@ -11,13 +11,13 @@ import { RedButton } from '@red-tour-project/common'
 import { ElMessage } from 'element-plus'
 import {
   recommendRoutes,
-  routes,
-  spots,
+  getRoutes,
   type FitnessLevel,
   type GuideRoute,
   type InterestTag,
   type RecommendOrigin,
-} from '@/mock/guide'
+} from '@/api/routes'
+import { getSpots, type GuideSpot } from '@/api/spots'
 import { playCorrectSound, playScoreSound } from '@/utils/sound'
 
 const router = useRouter()
@@ -47,7 +47,14 @@ const origin = computed<RecommendOrigin | undefined>(() => {
   }
   return undefined
 })
-const originSpot = computed(() => spots.find((s) => s.id === originSpotId.value) ?? null)
+/** 景点列表（手动选择出发点用） */
+const spots = ref<GuideSpot[]>([])
+/** 路线列表 */
+const routes = ref<GuideRoute[]>([])
+getSpots().then((list) => (spots.value = list))
+getRoutes().then((list) => (routes.value = list))
+
+const originSpot = computed(() => spots.value.find((s) => s.id === originSpotId.value) ?? null)
 
 /** 实时定位：浏览器 geolocation，失败可手动选择降级 */
 function useLocation() {
@@ -96,7 +103,7 @@ const selectedRoute = computed(() => {
   if (!selectedId.value) return null
   return (
     recommended.value.find((r) => r.id === selectedId.value) ??
-    routes.find((r) => r.id === selectedId.value) ??
+    routes.value.find((r) => r.id === selectedId.value) ??
     null
   )
 })

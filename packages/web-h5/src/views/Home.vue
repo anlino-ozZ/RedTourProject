@@ -2,7 +2,8 @@
 // 游客移动端H5 首页
 import { onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { spots } from '@/mock/guide'
+import { getSpots, type GuideSpot } from '@/api/spots'
+import { getRecommendations } from '@/api/qa'
 
 const router = useRouter()
 
@@ -10,8 +11,8 @@ const router = useRouter()
 interface BannerSlide {
   title: string
   subtitle: string
-  /** 白色线性图标（24x24 stroke path 集合） */
-  icon: string[]
+  /** 文旅宣传实景照片；加载失败时以 gradient 兜底 */
+  image: string
   gradient: string
 }
 
@@ -20,47 +21,29 @@ const banners: BannerSlide[] = [
     title: '智能导览',
     subtitle: '一键开启红色研学之旅',
     gradient: 'linear-gradient(135deg, #c41e3a 0%, #8a1126 100%)',
-    icon: [
-      'M3 6l6-3 6 3 6-3v15l-6 3-6-3-6-3z',
-      'M9 3v15',
-      'M15 6v15',
-      'M8 15l2.5-4 2.5 2 3-3.5',
-    ],
+    image:
+      'https://trae-api-cn.mchost.guru/api/ide/v1/text_to_image?prompt=tourism%20promotional%20photo%20of%20Jinggangshan%20mountains%20China%2C%20sea%20of%20clouds%20over%20lush%20green%20peaks%20at%20sunrise%2C%20Huangyangjie%20viewpoint%2C%20majestic%20landscape%2C%20travel%20poster%20quality&image_size=landscape_16_9',
   },
   {
     title: '红色剧本研学',
     subtitle: '沉浸式重温峥嵘岁月',
     gradient: 'linear-gradient(135deg, #ad1730 0%, #75101f 100%)',
-    icon: [
-      'M5 5h14',
-      'M5 5a2 2 0 1 0 0.01 0z',
-      'M19 5a2 2 0 1 0 0.01 0z',
-      'M7 5v12a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2V5',
-      'M10 9h4',
-      'M10 12h4',
-      'M10 15h2',
-    ],
+    image:
+      'https://trae-api-cn.mchost.guru/api/ide/v1/text_to_image?prompt=tourism%20promotional%20photo%20of%20the%20Red%20Boat%20on%20South%20Lake%20Jiaxing%20China%2C%20traditional%20wooden%20boat%20on%20calm%20misty%20water%2C%20historic%20site%2C%20warm%20morning%20light%2C%20travel%20poster%20quality&image_size=landscape_16_9',
   },
   {
     title: 'AI红色问答',
     subtitle: '探寻史料背后的故事',
     gradient: 'linear-gradient(135deg, #d92647 0%, #9e1629 100%)',
-    icon: [
-      'M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8z',
-      'M8 11h.01M12 11h.01M16 11h.01',
-    ],
+    image:
+      'https://trae-api-cn.mchost.guru/api/ide/v1/text_to_image?prompt=tourism%20promotional%20photo%20of%20Yanan%20Pagoda%20Hill%20at%20dusk%2C%20illuminated%20ancient%20pagoda%20on%20the%20hill%2C%20red%20tourism%20landmark%20in%20Shaanxi%20China%2C%20travel%20poster%20quality&image_size=landscape_16_9',
   },
   {
     title: '打卡集章',
     subtitle: '把红色记忆带回家',
     gradient: 'linear-gradient(135deg, #bc1c37 0%, #6e0d1a 100%)',
-    icon: [
-      'M12 3a7 7 0 1 0 0 14 7 7 0 0 0 0-14z',
-      'M12 6.9l1.05 2.12 2.34.34-1.7 1.65.4 2.34-2.09-1.1-2.09 1.1.4-2.34-1.7-1.65 2.34-.34z',
-      'M9 17h6',
-      'M10 17v3M14 17v3',
-      'M8.5 21h7',
-    ],
+    image:
+      'https://trae-api-cn.mchost.guru/api/ide/v1/text_to_image?prompt=tourism%20promotional%20photo%20of%20Zunyi%20Conference%20Site%2C%20historic%20grey%20brick%20building%20with%20courtyard%2C%20red%20tourism%20landmark%20in%20Guizhou%20China%2C%20blue%20sky%2C%20travel%20poster%20quality&image_size=landscape_16_9',
   },
 ]
 
@@ -148,11 +131,19 @@ function slideStyle(i: number): Record<string, string> {
   return { opacity: '0' }
 }
 
-onMounted(startAuto)
-onBeforeUnmount(stopAuto)
+onMounted(() => {
+  startAuto()
+  refreshHotQuestions()
+  qaTimer = setInterval(refreshHotQuestions, QA_REFRESH_MS)
+})
+onBeforeUnmount(() => {
+  stopAuto()
+  if (qaTimer) clearInterval(qaTimer)
+})
 
-// 热门景点（与导览地图共用 mock 数据，保证点击后定位到同一景点）
-const hotSpots = spots
+// 热门景点（与导览地图共用数据源，保证点击后定位到同一景点）
+const hotSpots = ref<GuideSpot[]>([])
+getSpots().then((list) => (hotSpots.value = list))
 
 /** 跳转到导览地图视图；传入 spotId 时地图自动定位到该景点 */
 function goToMap(spotId?: number) {
@@ -193,7 +184,7 @@ const quickEntries: QuickEntry[] = [
   },
   {
     label: '红色剧本',
-    path: '/', // TODO 待剧本功能实现后替换
+    path: '/interactive/scripts',
     bg: '#fdf3c4',
     icon: [
       'M5 5h14',
@@ -215,10 +206,6 @@ const quickEntries: QuickEntry[] = [
 ]
 
 function goQuick(entry: QuickEntry) {
-  if (entry.path === '/') {
-    // 剧本研学入口暂未开发
-    return
-  }
   router.push(entry.path)
 }
 
@@ -230,7 +217,8 @@ interface HotQuestion {
   heat: string
 }
 
-const hotQuestions: HotQuestion[] = [
+// 接口不可用时的兜底展示
+const hotQuestions = ref<HotQuestion[]>([
   {
     id: 1,
     text: '1921年在这里发生了哪些重大历史转折？',
@@ -241,7 +229,25 @@ const hotQuestions: HotQuestion[] = [
     text: '这件文物的材质和当时的生产背景是什么？',
     heat: '🔥 热门',
   },
-]
+])
+
+/** 推荐问题自动刷新间隔（30s），与问答页推荐接口同源 */
+const QA_REFRESH_MS = 30000
+let qaTimer: ReturnType<typeof setInterval> | undefined
+
+/** 拉取后端推荐问题；失败或为空时保留当前列表静默兜底 */
+async function refreshHotQuestions() {
+  try {
+    const list = await getRecommendations(undefined, { silent: true })
+    if (list.length) {
+      hotQuestions.value = list
+        .slice(0, 3)
+        .map((text, i) => ({ id: i + 1, text, heat: '🔥 热门' }))
+    }
+  } catch {
+    // 后端未启动/网络异常时忽略，继续展示现有列表
+  }
+}
 </script>
 
 <template>
@@ -262,23 +268,11 @@ const hotQuestions: HotQuestion[] = [
         :class="{ 'is-active': current === i }"
         :style="[{ background: slide.gradient }, slideStyle(i)]"
       >
-        <!-- 装饰元素 -->
-        <span class="home__banner-deco home__banner-deco--ring"></span>
-        <span class="home__banner-deco home__banner-deco--star">★</span>
+        <!-- 实景照片 + 深色蒙层（保证文字可读） -->
+        <img class="home__banner-photo" :src="slide.image" :alt="slide.title" />
+        <span class="home__banner-scrim"></span>
 
         <div class="home__banner-inner">
-          <span class="home__banner-icon">
-            <svg
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="1.7"
-              stroke-linecap="round"
-              stroke-linejoin="round"
-            >
-              <path v-for="(d, j) in slide.icon" :key="j" :d="d" />
-            </svg>
-          </span>
           <h2 class="home__banner-title">{{ slide.title }}</h2>
           <p class="home__banner-subtitle">{{ slide.subtitle }}</p>
         </div>
@@ -336,7 +330,15 @@ const hotQuestions: HotQuestion[] = [
           class="home__spot-item"
           @click="goToMap(spot.id)"
         >
-          <div class="home__spot-img">{{ spot.name.charAt(0) }}</div>
+          <div class="home__spot-img">
+            {{ spot.name.charAt(0) }}
+            <img
+              v-if="spot.image"
+              :src="spot.image"
+              :alt="spot.name"
+              loading="lazy"
+            />
+          </div>
           <span class="home__spot-name">{{ spot.name }}</span>
           <span class="home__spot-tag">{{ spot.tag }}</span>
         </div>
@@ -390,13 +392,14 @@ const hotQuestions: HotQuestion[] = [
     }
   }
 
-  // ===== 顶部 Banner 轮播 =====
+  // ===== 顶部 Banner 轮播（圆角卡片） =====
   &__banner {
     position: relative;
-    margin: -@spacing-sm -@spacing-md @spacing-md;
-    height: 172px;
+    margin: 0 0 @spacing-md;
+    height: 180px;
     overflow: hidden;
-    border-radius: 0 0 @radius-lg @radius-lg;
+    border-radius: @radius-lg;
+    box-shadow: 0 6px 20px rgba(196, 30, 58, 0.18);
     touch-action: pan-y; // 纵向滚动交给页面，横向由轮播接管
     user-select: none;
     cursor: grab;
@@ -423,6 +426,30 @@ const hotQuestions: HotQuestion[] = [
     }
   }
 
+  // 实景照片（铺满）与深色渐变蒙层
+  &__banner-photo {
+    position: absolute;
+    inset: 0;
+    z-index: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    pointer-events: none;
+  }
+
+  &__banner-scrim {
+    position: absolute;
+    inset: 0;
+    z-index: 1;
+    background: linear-gradient(
+      180deg,
+      rgba(0, 0, 0, 0.15) 0%,
+      rgba(0, 0, 0, 0.12) 45%,
+      rgba(0, 0, 0, 0.55) 100%
+    );
+    pointer-events: none;
+  }
+
   &__banner-inner {
     position: relative;
     z-index: 2;
@@ -433,61 +460,20 @@ const hotQuestions: HotQuestion[] = [
     padding: 0 @spacing-lg;
   }
 
-  &__banner-icon {
-    width: 52px;
-    height: 52px;
-    margin-bottom: @spacing-sm;
-    border-radius: 50%;
-    border: 1.5px solid rgba(255, 255, 255, 0.55);
-    background: rgba(255, 255, 255, 0.1);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
-
-    svg {
-      width: 27px;
-      height: 27px;
-    }
-  }
-
   &__banner-title {
     margin: 0;
-    font-size: 22px;
+    font-size: 24px;
     font-weight: 700;
     letter-spacing: 3px;
-    text-shadow: 0 2px 8px rgba(0, 0, 0, 0.18);
+    text-shadow: 0 2px 10px rgba(0, 0, 0, 0.45);
   }
 
   &__banner-subtitle {
     margin: 6px 0 0;
     font-size: 13px;
     letter-spacing: 1px;
-    opacity: 0.92;
-  }
-
-  // 背景装饰：虚线圆环 + 暗五角星
-  &__banner-deco {
-    position: absolute;
-    z-index: 1;
-    pointer-events: none;
-
-    &--ring {
-      width: 190px;
-      height: 190px;
-      right: -66px;
-      top: -78px;
-      border-radius: 50%;
-      border: 1.5px dashed rgba(255, 255, 255, 0.2);
-    }
-    &--star {
-      font-size: 130px;
-      line-height: 1;
-      left: -18px;
-      bottom: -52px;
-      color: rgba(255, 255, 255, 0.07);
-      transform: rotate(-12deg);
-    }
+    opacity: 0.95;
+    text-shadow: 0 1px 6px rgba(0, 0, 0, 0.4);
   }
 
   // 底部小圆点分页指示器
@@ -558,11 +544,17 @@ const hotQuestions: HotQuestion[] = [
     width: 120px;
     cursor: pointer;
     text-align: center;
+    transition: transform 0.15s;
+
+    &:active {
+      transform: scale(0.96);
+    }
   }
   &__spot-img {
+    position: relative;
     width: 120px;
     height: 90px;
-    border-radius: @radius-base;
+    border-radius: @radius-lg;
     background: linear-gradient(135deg, @color-primary 0%, @color-primary-active 100%);
     margin-bottom: @spacing-sm;
     display: flex;
@@ -572,6 +564,17 @@ const hotQuestions: HotQuestion[] = [
     font-size: 24px;
     font-weight: 700;
     opacity: 0.85;
+    overflow: hidden;
+    box-shadow: @shadow-card;
+
+    // 实景照片覆盖在渐变兜底之上；加载失败时保留首字符占位
+    img {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+    }
   }
   &__spot-name {
     display: block;
@@ -587,13 +590,16 @@ const hotQuestions: HotQuestion[] = [
     text-align: center;
   }
 
-  // 功能入口四宫格（一行 4 个）
+  // 功能入口四宫格（一行 4 个，白底卡片容器）
   &__quick {
     display: flex;
     justify-content: space-between;
-    margin: @spacing-sm 0 @spacing-md;
-    padding: 0;
+    margin: 0 0 @spacing-md;
+    padding: @spacing-md @spacing-sm;
     gap: 8px;
+    background: @color-bg-card;
+    border-radius: @radius-lg;
+    box-shadow: @shadow-card;
   }
 
   &__quick-item {

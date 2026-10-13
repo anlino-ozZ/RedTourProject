@@ -10,18 +10,14 @@ import { useRoute, useRouter } from 'vue-router'
 import { RedButton, RedDialog } from '@red-tour-project/common'
 import { ElMessage } from 'element-plus'
 import {
-  routes,
-  spots,
-  type GuideRoute,
-  type GuideSpot,
-} from '@/mock/guide'
-import {
   playScoreSound,
   playTapSound,
   playFanfareSound,
   playBadgeShineSound,
 } from '@/utils/sound'
 import { askNarration, resolveAudioUrl } from '@/api/guide'
+import { getRoutes, type GuideRoute } from '@/api/routes'
+import { getSpots, type GuideSpot } from '@/api/spots'
 import { speak, stopSpeak } from '@/utils/narrator'
 import { addPoints } from '@/utils/levelStorage'
 import {
@@ -33,17 +29,25 @@ import {
 const route = useRoute()
 const router = useRouter()
 
+/** 路线列表 */
+const routes = ref<GuideRoute[]>([])
+/** 景点列表 */
+const spots = ref<GuideSpot[]>([])
+getRoutes().then((list) => (routes.value = list))
+getSpots().then((list) => (spots.value = list))
+
 const routeId = Number(route.query.routeId) || 1
-const currentRoute = computed<GuideRoute>(
-  () => routes.find((r) => r.id === routeId) ?? routes[0],
+const currentRoute = computed<GuideRoute | undefined>(
+  () => routes.value.find((r) => r.id === routeId) ?? routes.value[0],
 )
 
 /** 该路线上的景点列表（按顺序） */
-const routeSpots = computed<GuideSpot[]>(() =>
-  currentRoute.value.spotIds
-    .map((id) => spots.find((s) => s.id === id))
-    .filter((s): s is GuideSpot => !!s),
-)
+const routeSpots = computed<GuideSpot[]>(() => {
+  if (!currentRoute.value) return []
+  return currentRoute.value.spotIds
+    .map((id) => spots.value.find((s) => s.id === id))
+    .filter((s): s is GuideSpot => !!s)
+})
 
 // ===== 导航状态机 =====
 /** 当前正在前往的景点索引（0 表示第一个） */
@@ -265,7 +269,7 @@ const pathD = computed(() => {
       <!-- 装饰 -->
       <span class="guide-nav__map-road"></span>
       <span class="guide-nav__map-lake"></span>
-      <span class="guide-nav__map-chip">{{ currentRoute.name }}</span>
+      <span class="guide-nav__map-chip">{{ currentRoute?.name }}</span>
 
       <!-- 路线虚线 -->
       <svg class="guide-nav__svg" viewBox="0 0 100 100" preserveAspectRatio="none">
@@ -485,7 +489,7 @@ const pathD = computed(() => {
       <div class="celebrate__card">
         <span class="celebrate__trophy">🏆</span>
         <h2 class="celebrate__title">恭喜打卡完成！</h2>
-        <p class="celebrate__sub">{{ currentRoute.name }}</p>
+        <p class="celebrate__sub">{{ currentRoute?.name }}</p>
         <p class="celebrate__num">共打卡 {{ routeSpots.length }} 个景点 · 全部完成</p>
         <div class="celebrate__actions">
           <RedButton type="primary" size="medium" @click="router.push('/guide')">

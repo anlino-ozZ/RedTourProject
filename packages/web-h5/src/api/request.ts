@@ -34,7 +34,8 @@ request.interceptors.response.use(
       localStorage.removeItem('rt_token')
       ElMessage.warning('登录已过期，请重新登录')
       // 后续接入登录页后在此跳转
-    } else {
+    } else if (!(error.config as { silent?: boolean } | undefined)?.silent) {
+      // config.silent = true 的请求（如后台轮询）失败时不弹全局错误提示
       ElMessage.error(error.message || '网络异常')
     }
     return Promise.reject(error)

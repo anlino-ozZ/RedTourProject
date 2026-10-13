@@ -20,6 +20,8 @@ export interface GuideSpot {
   name: string
   tag: string
   desc: string
+  /** 景点实景照片（首页热门景点等展示用） */
+  image?: string
   /** 讲解音频时长（秒，mock） */
   audioLen?: number
   /** 景点兴趣标签（用于偏好匹配） */
@@ -61,6 +63,8 @@ export const spots: GuideSpot[] = [
     name: '黄洋界',
     tag: '战役遗址',
     desc: '黄洋界保卫战发生地，扼守井冈山五大哨口之一，地势险要、云海壮阔。',
+    image:
+      'https://trae-api-cn.mchost.guru/api/ide/v1/text_to_image?prompt=realistic%20photo%20of%20Huangyangjie%20mountain%20pass%20in%20Jinggangshan%20China%2C%20misty%20sea%20of%20clouds%20over%20green%20mountain%20ridges%2C%20stone%20monument%20at%20historic%20red%20army%20battlefield%20site%2C%20morning%20light%2C%20landscape%20photography&image_size=landscape_4_3',
     x: 22,
     y: 26,
     audioLen: 145,
@@ -71,6 +75,8 @@ export const spots: GuideSpot[] = [
     name: '八角楼',
     tag: '革命旧址',
     desc: '毛泽东同志旧居，一盏清油灯下写下《中国的红色政权为什么能够存在？》。',
+    image:
+      'https://trae-api-cn.mchost.guru/api/ide/v1/text_to_image?prompt=realistic%20photo%20of%20Bajiao%20Lou%20octagonal%20window%20house%20in%20Maoping%20Jinggangshan%20China%2C%20traditional%20Chinese%20rural%20brick%20house%20with%20tiled%20roof%2C%20former%20residence%20courtyard%2C%20red%20tourism%20heritage%20site%2C%20daylight%20photography&image_size=landscape_4_3',
     x: 58,
     y: 38,
     audioLen: 180,
@@ -81,6 +87,8 @@ export const spots: GuideSpot[] = [
     name: '革命博物馆',
     tag: '博物馆',
     desc: '全面展示井冈山斗争史的国家级博物馆，馆藏文物三千余件。',
+    image:
+      'https://trae-api-cn.mchost.guru/api/ide/v1/text_to_image?prompt=realistic%20photo%20of%20Jinggangshan%20Revolutionary%20Museum%20exterior%2C%20grand%20modern%20museum%20building%20with%20red%20star%20emblem%2C%20wide%20stone%20stairs%20and%20plaza%2C%20blue%20sky%2C%20architectural%20photography&image_size=landscape_4_3',
     x: 46,
     y: 62,
     audioLen: 210,
@@ -91,6 +99,8 @@ export const spots: GuideSpot[] = [
     name: '烈士陵园',
     tag: '纪念地',
     desc: '瞻仰革命先烈的纪念圣地，碑林、纪念碑与雕塑群依山而建。',
+    image:
+      'https://trae-api-cn.mchost.guru/api/ide/v1/text_to_image?prompt=realistic%20photo%20of%20Jinggangshan%20revolutionary%20martyrs%20cemetery%2C%20solemn%20stone%20memorial%20monument%20surrounded%20by%20pine%20trees%2C%20stone%20steps%20on%20hillside%2C%20memorial%20park%2C%20daylight%20photography&image_size=landscape_4_3',
     x: 74,
     y: 70,
     audioLen: 120,
@@ -101,6 +111,8 @@ export const spots: GuideSpot[] = [
     name: '会师广场',
     tag: '纪念碑',
     desc: '朱毛两军胜利会师之地，高耸的会师纪念碑见证了红军的诞生。',
+    image:
+      'https://trae-api-cn.mchost.guru/api/ide/v1/text_to_image?prompt=realistic%20photo%20of%20Huishi%20Square%20in%20Jinggangshan%20China%2C%20tall%20red%20army%20joining%20forces%20memorial%20obelisk%20in%20open%20plaza%2C%20bronze%20sculptures%2C%20clear%20blue%20sky%2C%20daylight%20photography&image_size=landscape_4_3',
     x: 30,
     y: 76,
     audioLen: 155,

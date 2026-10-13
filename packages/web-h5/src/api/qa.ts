@@ -56,11 +56,15 @@ export function speechToText(file: Blob, filename = 'recording.webm'): Promise<S
   return request.post('/stt', form, { timeout: 30000 })
 }
 
-/** 获取推荐问题列表 */
+/** 获取推荐问题列表；silent=true 时请求失败不弹全局错误提示（用于后台轮询） */
 export async function getRecommendations(
   scenicAreaId: number = DEFAULT_SCENIC_AREA_ID,
+  options?: { silent?: boolean },
 ): Promise<string[]> {
-  const list = await request.get('/ask/recommendations', { params: { scenicAreaId } })
+  const list = await request.get('/ask/recommendations', {
+    params: { scenicAreaId },
+    silent: options?.silent,
+  } as Parameters<typeof request.get>[1])
   if (!Array.isArray(list)) return []
   return list.map((item: unknown) =>
     typeof item === 'string' ? item : (item as { question?: string }).question ?? '',
