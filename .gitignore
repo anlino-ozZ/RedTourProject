@@ -67,3 +67,6 @@ yarn-error.log*
 # ===== 操作系统 =====
 Thumbs.db
 desktop.ini
+# 子包 npm lock
+packages/*/package-lock.json
+public-common/package-lock.json
