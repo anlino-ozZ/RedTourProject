@@ -5,10 +5,9 @@
  *      → 全部完成 → 结局剧情 → 解锁成就徽章 + 积分 + 分享/收藏
  * 数据暂为 Mock，动作识别/定位打卡后续接入 ai-engine
  */
-import { computed, onUnmounted, ref } from 'vue'
+import { computed, onUnmounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { getBadgeById, getScriptById, mockScripts } from '@/mock/interaction'
-import type { ScriptTask } from '@/mock/interaction'
+import { getScriptById, getAchievements, type Script, type AchievementBadge, type ScriptTask } from '@/api/scripts'
 import {
   playBadgeShineSound,
   playCorrectSound,
@@ -23,32 +22,53 @@ import { unlockBadge } from '@/utils/achievementStorage'
 const router = useRouter()
 const route = useRoute()
 
-// 当前剧本：按路由参数加载，无效/缺失时回退第一部可玩剧本
-const script = computed(
-  () => getScriptById(route.query.scriptId as string) ?? mockScripts.find((s) => !s.locked)!,
+/** 当前剧本：按路由参数异步加载，无效/缺失时回退第一部可玩剧本 */
+const script = ref<Script | null>(null)
+/** 成就徽章列表（用于查找奖励徽章） */
+const badges = ref<AchievementBadge[]>([])
+
+async function loadScript() {
+  const id = route.query.scriptId as string
+  let s = await getScriptById(id)
+  if (!s) {
+    // 回退：取第一部可玩剧本
+    const { getScripts } = await import('@/api/scripts')
+    const all = await getScripts()
+    s = all.find((x) => !x.locked) ?? all[0]
+  }
+  script.value = s ?? null
+}
+loadScript()
+getAchievements().then((list) => (badges.value = list))
+
+const rewardBadge = computed(() =>
+  script.value ? badges.value.find((b) => b.id === script.value!.reward.badgeId) : undefined,
 )
-const rewardBadge = computed(() => getBadgeById(script.value.reward.badgeId))
+
+// 路由参数变化时重新加载剧本
+watch(() => route.query.scriptId, loadScript)
 
 // ===== 流程状态机 =====
 type Stage = 'role' | 'intro' | 'tasks' | 'ending' | 'reward'
 const stage = ref<Stage>('role')
 const roleId = ref('')
-const role = computed(() => script.value.roles.find((r) => r.id === roleId.value))
+const role = computed(() => script.value?.roles.find((r) => r.id === roleId.value))
 
 const taskIndex = ref(0)
-const currentTask = computed(() => script.value.tasks[taskIndex.value] as ScriptTask)
+const currentTask = computed(() => script.value?.tasks[taskIndex.value] as ScriptTask | undefined)
 const score = ref(0)
 const overallProgress = computed(() => {
   if (stage.value === 'role' || stage.value === 'intro') return 0
   if (stage.value === 'ending' || stage.value === 'reward') return 100
-  return Math.round((taskIndex.value / script.value.tasks.length) * 100)
+  const len = script.value?.tasks.length ?? 1
+  return Math.round((taskIndex.value / len) * 100)
 })
 
 const stageLabel = computed(() => {
   switch (stage.value) {
     case 'role': return '选择角色'
     case 'intro': return '剧情开场'
-    case 'tasks': return `任务 ${taskIndex.value + 1}/${script.value.tasks.length}`
+    case 'tasks': return `任务 ${taskIndex.value + 1}/${script.value?.tasks.length ?? 0}`
     case 'ending': return '结局'
     case 'reward': return '通关'
   }
@@ -106,7 +126,7 @@ function pickRole(id: string) {
 }
 
 function startScript() {
-  if (!roleId.value) {
+  if (!roleId.value || !script.value) {
     showToast('请先选择一个角色')
     return
   }
@@ -139,6 +159,7 @@ function flyup(points: number, soundDelaySec = 0) {
 /** 任务完成 → 推进剧情 + 获得积分；所有任务完成 → 结局 */
 function completeTask(scoreDelaySec = 0) {
   const task = currentTask.value
+  if (!task || !script.value) return
   flyup(task.points, scoreDelaySec)
   showToast(`任务完成，剧情推进！`)
   setTimeout(() => {
@@ -149,11 +170,11 @@ function completeTask(scoreDelaySec = 0) {
     quizCorrect.value = false
     showGuide.value = false
     checkinState.value = 'idle'
-    if (taskIndex.value < script.value.tasks.length - 1) {
+    if (taskIndex.value < script.value!.tasks.length - 1) {
       taskIndex.value++
     } else {
       stage.value = 'ending'
-      typewriter(script.value.ending)
+      typewriter(script.value!.ending)
     }
   }, 1000)
 }
@@ -171,8 +192,10 @@ function doAction() {
 /** 问答任务：答错 → 提示重试 + 引导帮助；答对 → 过 */
 function pickQuiz(i: number) {
   if (quizCorrect.value) return
+  const task = currentTask.value
+  if (!task?.quiz) return
   quizPicked.value = i
-  const quiz = currentTask.value.quiz!
+  const quiz = task.quiz
   if (i === quiz.answer) {
     quizCorrect.value = true
     playCorrectSound()
@@ -207,7 +230,7 @@ function toReward() {
   // 徽章解锁号角
   playFanfareSound()
   // 写入解锁状态（互动中心徽章墙据此点亮）；仅首次解锁时错峰叠徽章闪耀音
-  const { isNew } = unlockBadge(script.value.reward.badgeId)
+  const { isNew } = unlockBadge(script.value!.reward.badgeId)
   badgeIsNew.value = isNew
   if (isNew) shineTimer = setTimeout(() => playBadgeShineSound(), 900)
   // 撒花彩带（确定性伪随机，避免每次渲染位置跳动）
@@ -258,6 +281,10 @@ onUnmounted(() => {
 
 <template>
   <div class="script-play">
+    <!-- 剧本加载中 -->
+    <div v-if="!script" class="script-play__loading">剧本加载中...</div>
+
+    <template v-else>
     <!-- ===== 顶部操作栏 ===== -->
     <div class="topbar">
       <button class="icon-btn" aria-label="退出剧本" @click="onClose">
@@ -337,7 +364,7 @@ onUnmounted(() => {
     </div>
 
     <!-- ===== 阶段三：任务循环 ===== -->
-    <div v-else-if="stage === 'tasks'" class="stage stage--tasks">
+    <div v-else-if="stage === 'tasks' && currentTask" class="stage stage--tasks">
       <div class="task-head">
         <span class="task-head__label">{{ currentTask.title }}</span>
         <span class="task-head__score">积分 {{ score }}</span>
@@ -495,6 +522,7 @@ onUnmounted(() => {
     <transition name="fade">
       <div v-if="toastText" class="script-play__toast">{{ toastText }}</div>
     </transition>
+    </template>
   </div>
 </template>
 
@@ -523,6 +551,15 @@ onUnmounted(() => {
     font-size: @font-size-base;
     white-space: nowrap;
     z-index: 100;
+  }
+
+  &__loading {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 60vh;
+    color: rgba(255, 255, 255, 0.6);
+    font-size: @font-size-base;
   }
 }
 

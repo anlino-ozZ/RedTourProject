@@ -6,8 +6,7 @@
  */
 import { computed, onUnmounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { mockAchievements, mockScripts, mockTasks } from '@/mock/interaction'
-import type { AchievementBadge, InteractionTask } from '@/mock/interaction'
+import { getAchievements, getScripts, getTasks, type AchievementBadge, type InteractionTask, type Script } from '@/api/scripts'
 import { playBadgeShineSound, playLockedSound } from '@/utils/sound'
 import { getUnlockedBadges } from '@/utils/achievementStorage'
 
@@ -15,35 +14,42 @@ const router = useRouter()
 
 // 合并本地解锁状态：剧本通关等途径解锁的徽章在此点亮（未解锁缺省补金色）
 const unlockedMap = getUnlockedBadges()
-const achievements = ref<AchievementBadge[]>(
-  mockAchievements.map((b) =>
+const achievements = ref<AchievementBadge[]>([])
+const scripts = ref<Script[]>([])
+const tasks = ref<InteractionTask[]>([])
+
+getAchievements().then((list) => {
+  achievements.value = list.map((b) =>
     !b.earned && unlockedMap[b.id]
       ? { ...b, earned: true, earnedAt: unlockedMap[b.id], color: b.color ?? '#d4af37' }
       : b,
-  ),
-)
+  )
+})
+getScripts().then((list) => (scripts.value = list))
+getTasks().then((list) => (tasks.value = list))
+
 // 剧本通关进度（真实数据：奖励徽章已解锁即该剧本已通关）
-const playableScripts = mockScripts.filter((s) => !s.locked)
+const playableScripts = computed(() => scripts.value.filter((s) => !s.locked))
 const clearedCount = computed(
-  () => playableScripts.filter((s) => unlockedMap[s.reward.badgeId]).length,
+  () => playableScripts.value.filter((s) => unlockedMap[s.reward.badgeId]).length,
 )
 const scriptProgress = computed(() =>
-  playableScripts.length ? Math.round((clearedCount.value / playableScripts.length) * 100) : 0,
+  playableScripts.value.length ? Math.round((clearedCount.value / playableScripts.value.length) * 100) : 0,
 )
 
 // 任务列表：剧本任务按通关进度联动状态（全部通关 → 已完成）
-const tasks = ref<InteractionTask[]>(
-  mockTasks.map((t) =>
-    t.id === 't0' && clearedCount.value === playableScripts.length
+const displayedTasks = computed(() =>
+  tasks.value.map((t) =>
+    t.id === 't0' && clearedCount.value === playableScripts.value.length
       ? { ...t, status: 'done' as const, actionText: '已完成' }
       : t,
   ),
 )
 
 // 当前进行中的剧本（Hero 展示位）
-const featuredTask = computed(() => tasks.value.find((t) => t.actionTo))
+const featuredTask = computed(() => displayedTasks.value.find((t) => t.actionTo))
 // Hero 展示第一部可玩剧本
-const featuredScript = computed(() => mockScripts.find((s) => !s.locked))
+const featuredScript = computed(() => scripts.value.find((s) => !s.locked))
 const earnedCount = computed(() => achievements.value.filter((a) => a.earned).length)
 
 const toastText = ref('')
@@ -171,7 +177,7 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
       </div>
       <div class="tasks">
         <div
-          v-for="task in tasks"
+          v-for="task in displayedTasks"
           :key="task.id"
           class="task-card"
           :class="{ 'is-done': task.status === 'done' }"

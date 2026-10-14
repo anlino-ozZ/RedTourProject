@@ -4,7 +4,8 @@
 import { computed, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { RedButton } from '@red-tour-project/common'
-import { routes, spots, type GuideRoute } from '@/mock/guide'
+import { getRoutes, type GuideRoute } from '@/api/routes'
+import { getSpots, type GuideSpot } from '@/api/spots'
 
 const route = useRoute()
 const router = useRouter()
@@ -13,33 +14,45 @@ const view = ref<'map' | 'list'>(
   route.query.view === 'list' ? 'list' : 'map',
 )
 const sortType = ref<'recommend' | 'distance'>('recommend')
-const selectedSpotId = ref<number>(
-  route.query.spotId ? Number(route.query.spotId) : spots[0].id,
-)
 const selectedId = ref<number | null>(null)
 
+/** 景点列表 */
+const spots = ref<GuideSpot[]>([])
+/** 路线列表 */
+const routes = ref<GuideRoute[]>([])
+getSpots().then((list) => {
+  spots.value = list
+  // 未指定 spotId 时默认选中第一个景点
+  if (!route.query.spotId && list.length) {
+    selectedSpotId.value = list[0].id
+  }
+})
+getRoutes().then((list) => (routes.value = list))
+
+const selectedSpotId = ref<number>(Number(route.query.spotId) || 0)
+
 const selectedSpot = computed(
-  () => spots.find((s) => s.id === selectedSpotId.value) ?? spots[0],
+  () => spots.value.find((s) => s.id === selectedSpotId.value) ?? spots.value[0],
 )
 const spotRoutes = computed(() =>
-  routes.filter((r) => r.spotIds.includes(selectedSpotId.value)),
+  routes.value.filter((r) => r.spotIds.includes(selectedSpotId.value)),
 )
 const sortedRoutes = computed(() => {
   if (sortType.value === 'distance') {
-    return [...routes].sort((a, b) => a.distance - b.distance)
+    return [...routes.value].sort((a, b) => a.distance - b.distance)
   }
-  return [...routes].sort(
+  return [...routes.value].sort(
     (a, b) => (b.tag === '推荐' ? 1 : 0) - (a.tag === '推荐' ? 1 : 0),
   )
 })
 const selectedRoute = computed(() => {
   if (!selectedId.value) return null
   return (
-    routes.find((r) => r.id === selectedId.value) as GuideRoute | undefined
+    routes.value.find((r) => r.id === selectedId.value) as GuideRoute | undefined
   ) ?? null
 })
 const hottestRouteId = computed(
-  () => [...routes].sort((a, b) => b.visitCount - a.visitCount)[0]?.id,
+  () => [...routes.value].sort((a, b) => b.visitCount - a.visitCount)[0]?.id,
 )
 
 function stars(difficulty: number): string {
@@ -115,10 +128,11 @@ function goRecommend() {
       <div class="guide__spot-panel">
         <div class="guide__spot-head">
           <h3 class="guide__spot-name">
-            {{ selectedSpot.name }}
-            <span class="guide__spot-tag">{{ selectedSpot.tag }}</span>
+            {{ selectedSpot?.name }}
+            <span class="guide__spot-tag">{{ selectedSpot?.tag }}</span>
           </h3>
-          <p class="guide__spot-desc">{{ selectedSpot.desc }}</p>
+
+          <p class="guide__spot-desc">{{ selectedSpot?.desc }}</p>
         </div>
 
         <p class="guide__spot-sub">
