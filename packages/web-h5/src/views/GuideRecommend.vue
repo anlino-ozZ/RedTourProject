@@ -8,14 +8,17 @@
 import { computed, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { RedButton } from '@red-tour-project/common'
+import { ElMessage } from 'element-plus'
 import {
   recommendRoutes,
   routes,
+  spots,
   type FitnessLevel,
   type GuideRoute,
   type InterestTag,
+  type RecommendOrigin,
 } from '@/mock/guide'
-import { playCorrectSound } from '@/utils/sound'
+import { playCorrectSound, playScoreSound } from '@/utils/sound'
 
 const router = useRouter()
 
@@ -30,6 +33,44 @@ const FITNESS_OPTIONS: { key: FitnessLevel; label: string; desc: string }[] = [
 const interests = ref<InterestTag[]>(['历史', '人物'])
 const fitness = ref<FitnessLevel>('standard')
 const duration = ref<number>(90)
+
+// ===== 出发位置采集 =====
+type OriginMode = 'none' | 'geo' | 'manual'
+const originMode = ref<OriginMode>('none')
+const geoState = ref<'idle' | 'locating' | 'ok' | 'fail'>('idle')
+const originSpotId = ref<number | null>(null)
+
+const origin = computed<RecommendOrigin | undefined>(() => {
+  if (originMode.value === 'geo' && geoState.value === 'ok') return { type: 'geo' }
+  if (originMode.value === 'manual' && originSpotId.value != null) {
+    return { type: 'spot', spotId: originSpotId.value }
+  }
+  return undefined
+})
+const originSpot = computed(() => spots.find((s) => s.id === originSpotId.value) ?? null)
+
+/** 实时定位：浏览器 geolocation，失败可手动选择降级 */
+function useLocation() {
+  if (!('geolocation' in navigator)) {
+    geoState.value = 'fail'
+    ElMessage.warning('当前浏览器不支持定位，请手动选择出发景点')
+    originMode.value = 'manual'
+    return
+  }
+  geoState.value = 'locating'
+  navigator.geolocation.getCurrentPosition(
+    () => {
+      geoState.value = 'ok'
+      playScoreSound()
+    },
+    () => {
+      geoState.value = 'fail'
+      ElMessage.warning('定位失败，可手动选择出发景点')
+      originMode.value = 'manual'
+    },
+    { timeout: 8000 },
+  )
+}
 
 function toggleInterest(tag: InterestTag) {
   const i = interests.value.indexOf(tag)
@@ -68,6 +109,7 @@ async function generate() {
     interests: [...interests.value],
     fitness: fitness.value,
     duration: duration.value,
+    origin: origin.value ? { ...origin.value } : undefined,
   })
   aiGenerating.value = false
   aiReady.value = true
@@ -124,6 +166,69 @@ function stars(difficulty: number): string {
             {{ tag }}
           </button>
         </div>
+      </div>
+
+      <div class="guide-rec__block">
+        <h3 class="guide-rec__label">📍 出发位置</h3>
+        <div class="guide-rec__origin-tabs">
+          <button
+            type="button"
+            class="guide-rec__origin-tab"
+            :class="{ 'is-active': originMode === 'geo' }"
+            @click="originMode = 'geo'"
+          >
+            🛰️ 实时定位
+          </button>
+          <button
+            type="button"
+            class="guide-rec__origin-tab"
+            :class="{ 'is-active': originMode === 'manual' }"
+            @click="originMode = 'manual'"
+          >
+            🏛️ 手动选择
+          </button>
+        </div>
+
+        <!-- 实时定位 -->
+        <div v-if="originMode === 'geo'" class="guide-rec__origin-body">
+          <button
+            type="button"
+            class="guide-rec__locate"
+            :class="{ 'is-ok': geoState === 'ok' }"
+            :disabled="geoState === 'locating'"
+            @click="useLocation"
+          >
+            <template v-if="geoState === 'locating'">定位中...</template>
+            <template v-else-if="geoState === 'ok'">✓ 已获取实时位置 · 点击重新定位</template>
+            <template v-else>🛰️ 使用我的实时定位</template>
+          </button>
+          <p class="guide-rec__origin-tip">
+            将结合您的实时位置、景区热度与距离为您优化推荐
+          </p>
+        </div>
+
+        <!-- 手动选择 -->
+        <div v-if="originMode === 'manual'" class="guide-rec__origin-body">
+          <div class="guide-rec__chips">
+            <button
+              v-for="sp in spots"
+              :key="sp.id"
+              type="button"
+              class="guide-rec__chip"
+              :class="{ 'is-active': originSpotId === sp.id }"
+              @click="originSpotId = originSpotId === sp.id ? null : sp.id"
+            >
+              {{ sp.name }}
+            </button>
+          </div>
+          <p class="guide-rec__origin-tip">
+            {{ originSpot ? `从「${originSpot.name}」出发，优先推荐距离更近的路线` : '选择您当前所在的景点作为出发点' }}
+          </p>
+        </div>
+
+        <p v-if="originMode === 'none'" class="guide-rec__origin-tip">
+          不选择则按景区默认位置推荐
+        </p>
       </div>
 
       <div class="guide-rec__block">
@@ -195,7 +300,11 @@ function stars(difficulty: number): string {
         <h2 class="guide-rec__title">✨ 为您推荐 {{ recommended.length }} 条路线</h2>
         <p class="guide-rec__sub">
           {{ FITNESS_OPTIONS.find((f) => f.key === fitness)?.label }} ·
-          约 {{ duration }} 分钟 · 兴趣：{{ interests.join(' / ') }}
+          约 {{ duration }} 分钟 · 兴趣：{{ interests.join(' / ') }} ·
+          出发：{{
+            originSpot?.name ??
+            (originMode === 'geo' && geoState === 'ok' ? '我的实时位置' : '景区默认位置')
+          }}
         </p>
         <button class="guide-rec__edit" @click="backToPreference">重新选择偏好</button>
       </div>
@@ -343,6 +452,60 @@ function stars(difficulty: number): string {
       color: #fff;
       font-weight: 600;
     }
+  }
+
+  // 出发位置
+  &__origin-tabs {
+    display: flex;
+    gap: @spacing-sm;
+    margin-bottom: @spacing-sm;
+  }
+  &__origin-tab {
+    flex: 1;
+    height: 40px;
+    border: 1.5px solid @color-border;
+    border-radius: @radius-base;
+    background: @color-bg-card;
+    color: @color-text-regular;
+    font-size: @font-size-base;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s;
+
+    &.is-active {
+      border-color: @color-primary;
+      background: @color-primary;
+      color: #fff;
+      font-weight: 600;
+    }
+  }
+  &__origin-body {
+    margin-top: @spacing-sm;
+  }
+  &__locate {
+    width: 100%;
+    height: 44px;
+    border: 1.5px dashed @color-primary;
+    border-radius: @radius-base;
+    background: fade(@color-primary, 5%);
+    color: @color-primary;
+    font-size: @font-size-base;
+    font-weight: 600;
+    cursor: pointer;
+
+    &:disabled { opacity: 0.6; cursor: wait; }
+    &.is-ok {
+      border-style: solid;
+      border-color: #52c41a;
+      background: fade(#52c41a, 8%);
+      color: #389e0d;
+    }
+  }
+  &__origin-tip {
+    margin: @spacing-sm 0 0;
+    font-size: @font-size-sm;
+    color: @color-text-secondary;
+    line-height: 1.5;
   }
 
   // 体力等级

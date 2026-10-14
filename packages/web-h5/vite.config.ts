@@ -16,5 +16,10 @@ export default defineConfig({
     port: 5173, // h5=5173 / admin=5174 / touch=5175
     host: '0.0.0.0',
     open: false,
+    proxy: {
+      // 后端 API 与 TTS 音频资源统一代理到 server-business（8000）
+      '/api': { target: 'http://localhost:8000', changeOrigin: true },
+      '/audio': { target: 'http://localhost:8000', changeOrigin: true },
+    },
   },
 })

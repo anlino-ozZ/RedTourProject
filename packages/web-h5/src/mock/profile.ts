@@ -17,6 +17,8 @@ export interface MedalItem {
   icon: 'star' | 'check' | 'trophy' | 'lock' | 'map' | 'fire' | 'book' | 'flag'
   earned: boolean
   color?: string
+  /** 勋章说明（点击弹窗展示） */
+  desc?: string
 }
 
 export interface FootprintItem {
@@ -55,14 +57,14 @@ export const mockUser: ProfileUser = {
 }
 
 export const mockMedals: MedalItem[] = [
-  { name: '初心始发', icon: 'star', earned: true, color: '#c41e3a' },
-  { name: '剧本专家', icon: 'check', earned: true, color: '#2f7cf6' },
-  { name: '博古通今', icon: 'book', earned: true, color: '#d4af37' },
-  { name: '足迹达人', icon: 'map', earned: true, color: '#52c41a' },
-  { name: '烽火连城', icon: 'fire', earned: true, color: '#fa8c16' },
-  { name: '红旗飘扬', icon: 'flag', earned: true, color: '#c41e3a' },
-  { name: '百战不殆', icon: 'trophy', earned: false },
-  { name: '万古流芳', icon: 'star', earned: false },
+  { name: '初心始发', icon: 'star', earned: true, color: '#c41e3a', desc: '完成注册并开启红色之旅，迈出初心第一步。' },
+  { name: '剧本专家', icon: 'check', earned: true, color: '#2f7cf6', desc: '通关任意一部沉浸式红色剧本。' },
+  { name: '博古通今', icon: 'book', earned: true, color: '#d4af37', desc: '在红色问答中累计答对 20 道历史知识题。' },
+  { name: '足迹达人', icon: 'map', earned: true, color: '#52c41a', desc: '累计完成 5 个景点打卡。' },
+  { name: '烽火连城', icon: 'fire', earned: true, color: '#fa8c16', desc: '连续 7 天访问红色文旅，学习热情如火。' },
+  { name: '红旗飘扬', icon: 'flag', earned: true, color: '#c41e3a', desc: '游览全部核心景点，让红旗插遍足迹地图。' },
+  { name: '百战不殆', icon: 'trophy', earned: false, desc: '在剧本问答任务中零失误通关，证明你的博闻强识。' },
+  { name: '万古流芳', icon: 'star', earned: false, desc: '收集全部隐藏文物线索，解锁终极荣誉。' },
 ]
 
 export const mockFootprints: { date: string; items: FootprintItem[] }[] = [
