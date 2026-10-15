@@ -3,6 +3,7 @@
  * - 语音讲解复用问答接口 POST /ask（JWT 白名单公开接口，token 由 request 拦截器自动携带）
  */
 import request from './request'
+import { DEFAULT_SCENIC_AREA_ID } from './scenic'
 
 /** 问答/讲解接口返回结构（字段与后端 AskResult 一致） */
 export interface AskResult {
@@ -19,7 +20,7 @@ export interface AskResult {
  * TODO: H5 暂无"选择景区"功能，暂用后端种子数据默认景区（1=遵义会议纪念馆）；
  * 后续接入景区切换后从全局 store 读取
  */
-export const DEFAULT_SCENIC_AREA_ID = 1
+export { DEFAULT_SCENIC_AREA_ID }
 
 /** 智能问答/语音讲解（useVoice=true 时后端生成 TTS，返回 audioUrl） */
 export function askNarration(params: {
