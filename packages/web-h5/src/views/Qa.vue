@@ -7,6 +7,7 @@
 import { computed, nextTick, onMounted, onUnmounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import {
+  DEFAULT_SCENIC_AREA_ID,
   askAi,
   extractSourceTitle,
   getRecommendations,
@@ -302,7 +303,7 @@ onMounted(() => {
   }
 
   // 推荐问题：后端获取，失败静默沿用本地推荐
-  getRecommendations()
+  getRecommendations(DEFAULT_SCENIC_AREA_ID, { silent: true })
     .then((list) => {
       if (Array.isArray(list) && list.length > 0) suggestQuestions.value = list
     })

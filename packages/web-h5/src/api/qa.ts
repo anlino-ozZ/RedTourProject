@@ -49,10 +49,10 @@ export function askAi(params: {
   )
 }
 
-/** 语音转文字：上传录音文件（multipart/form-data），返回识别文本 */
+/** 语音转文字：上传录音文件（multipart/form-data，字段名须为后端 SttController 约定的 audio），返回识别文本 */
 export function speechToText(file: Blob, filename = 'recording.webm'): Promise<SttResult> {
   const form = new FormData()
-  form.append('file', file, filename)
+  form.append('audio', file, filename)
   return request.post('/stt', form, { timeout: 30000 })
 }
 
