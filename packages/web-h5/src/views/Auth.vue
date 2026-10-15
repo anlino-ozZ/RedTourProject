@@ -9,8 +9,11 @@ import { ref, computed, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { RedButton } from '@red-tour-project/common'
 import { playCorrectSound, playTapSound, playWrongSound } from '@/utils/sound'
+import { useUserStore } from '@/store/user'
+import { ApiError } from '@/api/request'
 
 const router = useRouter()
+const userStore = useUserStore()
 
 type Mode = 'login' | 'register' | 'forgot'
 const mode = ref<Mode>('login')
@@ -92,12 +95,17 @@ function backToLogin() {
 }
 
 // ===== 注册校验（登录仅要求非空）=====
+// 与后端 LoginRequest / RegisterRequest 的校验规则保持一致
 const USERNAME_MIN = 3
-const USERNAME_MAX = 12
+const USERNAME_MAX = 20
+const PATTERN_USERNAME = /^[a-zA-Z0-9_]+$/
 const PASSWORD_MIN = 6
+const PASSWORD_MAX = 32
 
 const usernameError = ref('')
 const passwordError = ref('')
+// 接口返回的失败原因（如"用户名或密码错误"），展示在提交按钮下方
+const submitError = ref('')
 const submitShake = ref(0)
 
 /** 校验当前表单：直接把错误写到对应字段，返回是否通过 */
@@ -112,8 +120,11 @@ function validate(): boolean {
     if (name.length < USERNAME_MIN || name.length > USERNAME_MAX) {
       usernameError.value = `用户名需 ${USERNAME_MIN}-${USERNAME_MAX} 个字符`
       ok = false
-    } else if (password.value.length < PASSWORD_MIN) {
-      passwordError.value = `密码至少 ${PASSWORD_MIN} 位`
+    } else if (!PATTERN_USERNAME.test(name)) {
+      usernameError.value = '用户名仅允许字母、数字或下划线'
+      ok = false
+    } else if (password.value.length < PASSWORD_MIN || password.value.length > PASSWORD_MAX) {
+      passwordError.value = `密码需 ${PASSWORD_MIN}-${PASSWORD_MAX} 位`
       ok = false
     } else if (password.value !== confirmPassword.value) {
       passwordError.value = '两次密码不一致，请重新输入'
@@ -141,6 +152,7 @@ function selectMode(m: Mode) {
   // 切换模式时清掉上一次的校验错误，避免误导
   usernameError.value = ''
   passwordError.value = ''
+  submitError.value = ''
   phoneError.value = ''
   smsError.value = ''
 }
@@ -159,7 +171,7 @@ function goBack() {
   }
 }
 
-function onSubmit() {
+async function onSubmit() {
   if (loading.value || !canSubmit.value) return
 
   // ===== 忘记密码：两步分步提交 =====
@@ -219,14 +231,27 @@ function onSubmit() {
     submitShake.value++
     return
   }
+  // 登录 / 注册：调用真实接口（后端失败原因由 axios 拦截器提示，这里再在表单内提示一次）
+  submitError.value = ''
   loading.value = true
-  // UI 占位：模拟提交，后续替换为真实接口
-  setTimeout(() => {
-    loading.value = false
+  try {
+    const payload = { username: username.value.trim(), password: password.value }
+    if (isRegister.value) {
+      await userStore.register(payload)
+    } else {
+      await userStore.login(payload)
+    }
     // 登录/注册成功：上行琶音后再跳转
     playCorrectSound()
     router.push('/')
-  }, 600)
+  } catch (err) {
+    // 业务错误展示后端 message（如"用户名或密码错误"）；网络异常等给通用文案
+    submitError.value = err instanceof ApiError ? err.message : '网络异常，请稍后重试'
+    playWrongSound()
+    submitShake.value++
+  } finally {
+    loading.value = false
+  }
 }
 
 function togglePassword() {
@@ -400,7 +425,7 @@ function togglePassword() {
               class="auth__input"
               :class="{ 'is-error': !!usernameError }"
               placeholder="请输入用户名"
-              maxlength="12"
+              maxlength="20"
               autocomplete="username"
               @input="usernameError = ''"
             />
@@ -484,6 +509,9 @@ function togglePassword() {
         >
           {{ mode === 'forgot' ? (forgotStep === 1 ? '下一步' : '重置密码') : (isRegister ? '注册' : '登录') }}
         </RedButton>
+
+        <!-- 接口失败原因（后端 message，如"用户名或密码错误"） -->
+        <p v-if="submitError" class="auth__error auth__error--submit">{{ submitError }}</p>
       </form>
 
       <!-- 重置成功提示 + 辅助链接 -->
