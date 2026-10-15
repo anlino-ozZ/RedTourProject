@@ -229,6 +229,14 @@ function stopRecording() {
   if (mediaRecorder && mediaRecorder.state !== 'inactive') mediaRecorder.stop()
 }
 
+/** 语音识别失败提示：优先透出后端 message，网络/超时单独提示，便于定位原因 */
+function sttErrorMessage(err: unknown): string {
+  const raw = err instanceof Error ? err.message.trim() : ''
+  if (/^(Network Error|Failed to fetch)$/i.test(raw)) return '无法连接识别服务，请确认后端服务已启动'
+  if (/timeout of \d+ms exceeded/i.test(raw)) return '识别超时，请缩短录音后重试'
+  return raw || '语音识别失败，请重试'
+}
+
 /** 录音停止：释放设备 → 上传识别 → 识别文本直接提问 */
 async function handleRecordStop() {
   mediaStream?.getTracks().forEach((t) => t.stop())
@@ -249,8 +257,8 @@ async function handleRecordStop() {
     } else {
       showToast('没有听清，请再说一次')
     }
-  } catch {
-    showToast('语音识别失败，请重试')
+  } catch (err) {
+    showToast(sttErrorMessage(err))
   } finally {
     sttPending.value = false
   }
