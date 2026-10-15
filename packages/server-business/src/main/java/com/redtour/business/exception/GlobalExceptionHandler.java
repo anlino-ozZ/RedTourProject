@@ -67,7 +67,7 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(DataIntegrityViolationException.class)
     public ApiResponse<Void> handleDataIntegrity(DataIntegrityViolationException e) {
         log.error("[数据冲突] {}", e.getMessage());
-        return ApiResponse.error(ResultCode.CONFLICT, "数据唯一性冲突");
+        return ApiResponse.error(ResultCode.CONFLICT.getCode(), "数据唯一性冲突");
     }
 
     /** ========== Spring 权限拒绝 ========== */
