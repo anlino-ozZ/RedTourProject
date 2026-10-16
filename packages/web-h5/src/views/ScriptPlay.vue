@@ -396,22 +396,23 @@ function toReward() {
   const { isNew } = unlockBadge(script.value!.reward.badgeId)
   badgeIsNew.value = isNew
   if (isNew) shineTimer = setTimeout(() => playBadgeShineSound(), 900)
-  // 撒花飘带（确定性伪随机，避免每次渲染位置跳动）
-  // 细长条形状 + 左右摆动 + 绕竖轴翻转，落点与摆幅各不相同，飘落更自然
-  confetti.value = Array.from({ length: 80 }, (_, i) => {
-    const width = 4 + ((i * 11) % 5)
-    const height = 16 + ((i * 7) % 20)
-    const color = CONFETTI_COLORS[i % CONFETTI_COLORS.length]
+  // 撒花（确定性伪随机，避免每次渲染位置跳动）
+  // 小方片 / 圆点 / 短条混排，负延迟让粒子一出现就均匀铺满全屏，不会挤成一条横带
+  confetti.value = Array.from({ length: 72 }, (_, i) => {
+    const mode = i % 5
+    const width = 5 + ((i * 7) % 4) * 3
+    const height = mode === 1 ? width : mode === 2 ? width * 2.1 : width * 0.6
+    const dur = 4.6 + (i % 7) * 0.45
     return {
-      left: `${(i * 17 + 3) % 100}%`,
-      width: `${width}px`,
-      height: `${height}px`,
-      radius: i % 3 === 0 ? '999px' : '2px',
-      bg: i % 6 === 0 ? `linear-gradient(160deg, ${color} 0%, #fff6e8 100%)` : color,
-      delay: `${((i * 7) % 18) / 10}s`,
-      dur: `${3 + ((i * 5) % 22) / 10}s`,
-      drift: `${(((i * 13) % 21) - 10) * 5}px`,
-      sway: `${8 + ((i * 9) % 16)}px`,
+      left: `${(i * 19 + 7) % 98}%`,
+      width: `${width.toFixed(1)}px`,
+      height: `${height.toFixed(1)}px`,
+      radius: mode === 2 ? '1px' : mode === 3 ? '999px' : '2px',
+      bg: CONFETTI_COLORS[i % CONFETTI_COLORS.length],
+      delay: `-${((i * 1.13) % dur).toFixed(2)}s`,
+      dur: `${dur.toFixed(2)}s`,
+      drift: `${(((i * 7) % 17) - 8) * 6}px`,
+      sway: `${6 + ((i * 11) % 14)}px`,
     }
   })
 }
@@ -431,7 +432,7 @@ const confetti = ref<
     sway: string
   }>
 >([])
-const CONFETTI_COLORS = ['#c41e3a', '#d4af37', '#e8c96a', '#f5f0e6', '#e2703a', '#8f1d2c']
+const CONFETTI_COLORS = ['#d92b4b', '#e6b422', '#f08b3a', '#f7efe2', '#ffd66b', '#a8202f', '#8f1d2c']
 let shineTimer: ReturnType<typeof setTimeout> | undefined
 
 function onShare() {
@@ -1374,40 +1375,33 @@ onUnmounted(() => {
 
   &__piece {
     position: absolute;
-    top: -20px;
-    width: 6px;
-    height: 22px;
+    top: 0;
     // 每片独立的横向落点与摆动幅度，由内联样式注入
     --drift: 0px;
-    --sway: 12px;
-    border-radius: 2px;
-    opacity: 0.95;
-    // 飘带式下落：左右摇摆 + 绕竖轴翻转，慢一点更飘逸
-    animation: confetti-fall 4s ease-in forwards;
-    will-change: transform;
+    --sway: 10px;
+    opacity: 0;
+    animation: confetti-fall 5.4s ease-in infinite;
+    will-change: transform, opacity;
   }
 }
 
 @keyframes confetti-fall {
   0% {
-    transform: translate3d(0, -14vh, 0) rotate(0deg) rotateY(0deg);
+    transform: translate3d(0, -14vh, 0) rotate(0deg);
+    opacity: 0;
+  }
+  10% {
     opacity: 1;
   }
-  20% {
-    transform: translate3d(var(--sway), 14vh, 0) rotate(140deg) rotateY(200deg);
+  35% {
+    transform: translate3d(var(--sway), 24vh, 0) rotate(190deg);
   }
-  40% {
-    transform: translate3d(calc(var(--sway) * -0.8), 40vh, 0) rotate(300deg) rotateY(60deg);
-  }
-  60% {
-    transform: translate3d(calc(var(--sway) * 1.1), 62vh, 0) rotate(460deg) rotateY(280deg);
-  }
-  80% {
-    transform: translate3d(calc(var(--sway) * -0.4), 88vh, 0) rotate(660deg) rotateY(120deg);
+  65% {
+    transform: translate3d(calc(var(--sway) * -0.8), 60vh, 0) rotate(400deg);
   }
   100% {
-    transform: translate3d(var(--drift), 114vh, 0) rotate(900deg) rotateY(360deg);
-    opacity: 0.6;
+    transform: translate3d(var(--drift), 116vh, 0) rotate(620deg);
+    opacity: 0.5;
   }
 }
 

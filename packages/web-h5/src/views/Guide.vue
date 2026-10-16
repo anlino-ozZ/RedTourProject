@@ -6,6 +6,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { RedButton } from '@red-tour-project/common'
 import { getRoutes, type GuideRoute } from '@/api/routes'
 import { getSpots, type GuideSpot } from '@/api/spots'
+import GuideIcon from '@/components/GuideIcon.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -148,7 +149,7 @@ function goRecommend() {
           <div class="guide__spot-route-main" @click="selectRoute(item.id)">
             <div class="guide__spot-route-head">
               <h4 class="guide__spot-route-name">{{ item.name }}</h4>
-              <span v-if="item.id === hottestRouteId" class="guide__spot-route-hot">🔥 热门</span>
+              <span v-if="item.id === hottestRouteId" class="guide__spot-route-hot"><GuideIcon name="hot" :size="11" /> 热门</span>
             </div>
             <div class="guide__spot-route-meta">
               <span>{{ stars(item.difficulty) }}</span>
@@ -205,7 +206,7 @@ function goRecommend() {
           <div class="guide__card-head">
             <h3 class="guide__card-name">{{ item.name }}</h3>
             <span class="guide__card-tag">{{ item.tag }}</span>
-            <span v-if="item.id === hottestRouteId" class="guide__card-hot">🔥 热门</span>
+            <span v-if="item.id === hottestRouteId" class="guide__card-hot"><GuideIcon name="hot" :size="11" /> 热门</span>
           </div>
           <p class="guide__card-desc">{{ item.desc }}</p>
           <div class="guide__card-meta">
@@ -214,7 +215,7 @@ function goRecommend() {
             <span class="guide__card-spots">{{ item.spotCount }} 个景点</span>
             <span class="guide__card-distance">距您 {{ item.distance }}km</span>
           </div>
-          <p class="guide__card-visits">🔥 {{ formatVisits(item.visitCount) }}</p>
+          <p class="guide__card-visits"><GuideIcon name="hot" :size="12" /> {{ formatVisits(item.visitCount) }}</p>
         </div>
         <button
           class="guide__card-go"
@@ -228,7 +229,7 @@ function goRecommend() {
     <!-- ===== AI 推荐独立入口（路由跳转，不展开面板） ===== -->
     <button class="guide__ai-entry" @click="goRecommend">
       <span class="guide__ai-entry-text">AI 为我推荐专属路线</span>
-      <span class="guide__ai-entry-arrow">→</span>
+      <span class="guide__ai-entry-arrow"><GuideIcon name="arrow-right" :size="16" /></span>
     </button>
 
     <!-- 底部固定操作栏（地图/列表选中路线后） -->
@@ -459,6 +460,9 @@ function goRecommend() {
     color: @color-text-primary;
   }
   &__spot-route-hot {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
     font-size: 11px;
     color: #e8601c;
   }
@@ -609,6 +613,9 @@ function goRecommend() {
     font-weight: 500;
   }
   &__card-hot {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
     font-size: 11px;
     color: #e8601c;
   }
@@ -631,6 +638,9 @@ function goRecommend() {
     letter-spacing: 2px;
   }
   &__card-visits {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
     margin: 0;
     font-size: @font-size-sm;
     color: #e8601c;
@@ -661,9 +671,8 @@ function goRecommend() {
     text-align: left;
   }
   &__ai-entry-arrow {
-    font-size: 16px;
+    display: inline-flex;
     color: @color-primary;
-    transform: translateY(-2px);
   }
 
   // 底部固定操作栏
