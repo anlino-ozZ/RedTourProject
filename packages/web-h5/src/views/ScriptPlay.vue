@@ -396,20 +396,22 @@ function toReward() {
   const { isNew } = unlockBadge(script.value!.reward.badgeId)
   badgeIsNew.value = isNew
   if (isNew) shineTimer = setTimeout(() => playBadgeShineSound(), 900)
-  // 撒花彩带（确定性伪随机，避免每次渲染位置跳动）
-  // 粒子更多、大小不一、横向飘移不同，铺得更满更散
+  // 撒花飘带（确定性伪随机，避免每次渲染位置跳动）
+  // 细长条形状 + 左右摆动 + 绕竖轴翻转，落点与摆幅各不相同，飘落更自然
   confetti.value = Array.from({ length: 80 }, (_, i) => {
-    const width = 6 + ((i * 11) % 8)
-    const height = width + ((i * 3) % 9)
+    const width = 4 + ((i * 11) % 5)
+    const height = 16 + ((i * 7) % 20)
+    const color = CONFETTI_COLORS[i % CONFETTI_COLORS.length]
     return {
       left: `${(i * 17 + 3) % 100}%`,
       width: `${width}px`,
       height: `${height}px`,
-      radius: i % 4 === 0 ? '999px' : '2px',
-      bg: CONFETTI_COLORS[i % CONFETTI_COLORS.length],
+      radius: i % 3 === 0 ? '999px' : '2px',
+      bg: i % 6 === 0 ? `linear-gradient(160deg, ${color} 0%, #fff6e8 100%)` : color,
       delay: `${((i * 7) % 18) / 10}s`,
-      dur: `${2.2 + ((i * 5) % 20) / 10}s`,
-      drift: `${(((i * 13) % 21) - 10) * 4}px`,
+      dur: `${3 + ((i * 5) % 22) / 10}s`,
+      drift: `${(((i * 13) % 21) - 10) * 5}px`,
+      sway: `${8 + ((i * 9) % 16)}px`,
     }
   })
 }
@@ -426,6 +428,7 @@ const confetti = ref<
     delay: string
     dur: string
     drift: string
+    sway: string
   }>
 >([])
 const CONFETTI_COLORS = ['#c41e3a', '#d4af37', '#e8c96a', '#f5f0e6', '#e2703a', '#8f1d2c']
@@ -686,6 +689,7 @@ onUnmounted(() => {
             animationDelay: c.delay,
             animationDuration: c.dur,
             '--drift': c.drift,
+            '--sway': c.sway,
           }"
         />
       </div>
@@ -1370,25 +1374,40 @@ onUnmounted(() => {
 
   &__piece {
     position: absolute;
-    top: -18px;
-    width: 8px;
-    height: 14px;
-    // 每片独立的横向飘移距离，由内联样式注入
+    top: -20px;
+    width: 6px;
+    height: 22px;
+    // 每片独立的横向落点与摆动幅度，由内联样式注入
     --drift: 0px;
+    --sway: 12px;
     border-radius: 2px;
     opacity: 0.95;
-    animation: confetti-fall 3s ease-in forwards;
+    // 飘带式下落：左右摇摆 + 绕竖轴翻转，慢一点更飘逸
+    animation: confetti-fall 4s ease-in forwards;
+    will-change: transform;
   }
 }
 
 @keyframes confetti-fall {
   0% {
-    transform: translate3d(0, -12vh, 0) rotate(0deg);
+    transform: translate3d(0, -14vh, 0) rotate(0deg) rotateY(0deg);
     opacity: 1;
   }
+  20% {
+    transform: translate3d(var(--sway), 14vh, 0) rotate(140deg) rotateY(200deg);
+  }
+  40% {
+    transform: translate3d(calc(var(--sway) * -0.8), 40vh, 0) rotate(300deg) rotateY(60deg);
+  }
+  60% {
+    transform: translate3d(calc(var(--sway) * 1.1), 62vh, 0) rotate(460deg) rotateY(280deg);
+  }
+  80% {
+    transform: translate3d(calc(var(--sway) * -0.4), 88vh, 0) rotate(660deg) rotateY(120deg);
+  }
   100% {
-    transform: translate3d(var(--drift), 112vh, 0) rotate(900deg);
-    opacity: 0.55;
+    transform: translate3d(var(--drift), 114vh, 0) rotate(900deg) rotateY(360deg);
+    opacity: 0.6;
   }
 }
 
