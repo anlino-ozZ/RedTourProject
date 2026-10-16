@@ -6,6 +6,7 @@
  * 当前 USE_MOCK=true 返回 mock 数据；后端 ready 后改为 false 即可零改动切换
  */
 import request from './request'
+import { DEFAULT_SCENIC_AREA_ID } from './scenic'
 import {
   routes as mockRoutes,
   recommendRoutes as mockRecommend,
@@ -20,9 +21,13 @@ export type { GuideRoute, FitnessLevel, InterestTag, RecommendOrigin }
 const USE_MOCK = true
 
 /** 获取路线列表 */
-export async function getRoutes(): Promise<GuideRoute[]> {
+export async function getRoutes(
+  scenicAreaId: number = DEFAULT_SCENIC_AREA_ID,
+): Promise<GuideRoute[]> {
   if (!USE_MOCK) {
-    return request.get('/routes', { params: { status: 'online' } })
+    // 契约（docs/05 第五节）：GET /routes?scenicAreaId=&difficulty=
+    // 后端 RouteController 尚未实现；契约字段到 UI GuideRoute 的映射待就绪后补齐
+    return request.get('/routes', { params: { scenicAreaId } })
   }
   return mockRoutes
 }

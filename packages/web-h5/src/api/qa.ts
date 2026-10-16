@@ -7,6 +7,7 @@
  * 契约与 api/guide.ts（导览语音讲解）保持一致
  */
 import request from './request'
+import { DEFAULT_SCENIC_AREA_ID } from './scenic'
 
 /** 问答接口返回结构（字段与后端 AskResult 一致） */
 export interface AskResult {
@@ -29,7 +30,7 @@ export interface SttResult {
  * TODO: H5 暂无"选择景区"功能，暂用后端种子数据默认景区；
  * 后续接入景区切换后从全局 store 读取
  */
-export const DEFAULT_SCENIC_AREA_ID = 1
+export { DEFAULT_SCENIC_AREA_ID }
 
 /** 智能问答（useVoice=true 时后端生成 TTS，返回 audioUrl） */
 export function askAi(params: {
