@@ -12,6 +12,7 @@ import {
 import UserAvatar from '@/components/UserAvatar.vue'
 import {
   AVATAR_PRESETS,
+  DEFAULT_PROFILE,
   fileToAvatarDataUrl,
   getProfile,
   getSettings,
@@ -32,8 +33,10 @@ import {
   type CheckInState,
 } from '@/utils/checkInStorage'
 import { playCorrectSound, playTapSound, playWrongSound } from '@/utils/sound'
+import { useUserStore } from '@/store/user'
 
 const router = useRouter()
+const userStore = useUserStore()
 
 // ===== 本地资料 & 设置（账号体系接入前仅存本机）=====
 const profile = ref<UserProfile>(getProfile())
@@ -41,8 +44,14 @@ const settings = ref<AppSettings>(getSettings())
 
 // ===== 等级体系：积分驱动，进入页面时刷新 =====
 const levelInfo = ref<LevelInfo>(getLevelInfo())
-onMounted(() => {
+onMounted(async () => {
   levelInfo.value = getLevelInfo()
+  // 登录后把账号昵称回填到本地资料：仅当本地昵称仍是默认值时，避免覆盖用户自定义昵称
+  if (!userStore.isLoggedIn) return
+  const me = userStore.user ?? (await userStore.refreshMe())
+  if (me?.nickname && profile.value.nickname === DEFAULT_PROFILE.nickname) {
+    profile.value = saveProfile({ nickname: me.nickname })
+  }
 })
 
 // ===== 每日签到：每日首次 +10 积分，签到后展示当日革命先辈名言 =====
@@ -372,12 +381,13 @@ function clearQaHistory() {
   }
 }
 
-function onLogout() {
+async function onLogout() {
   // 二次确认，防止误触直接退出
   if (!window.confirm('确定要退出登录吗？')) return
-  // TODO: 接入登出接口 / 清 token
   panelVisible.value = false
-  router.push('/auth')
+  // 通知后端把 token 写入 Redis 黑名单，并清空本地会话
+  await userStore.logout()
+  router.replace('/auth')
 }
 </script>
 
