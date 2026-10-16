@@ -163,6 +163,20 @@ const poseTip = computed(() => {
   if (!poseCameraOn.value) return `点击按钮开启摄像头，面向屏幕做「${target}」`
   return `对准镜头做出「${target}」，再点按钮识别`
 })
+/** 连续识别失败次数：用于逐级给出更具体的引导 */
+const poseFailCount = ref(0)
+/** 各动作的关键要领（对应 ai-engine 判定规则：敬礼看手腕是否到耳边，挥手看手腕是否高过肩，推磨看双手高度与间距） */
+const POSE_ACTION_GUIDE: Record<string, string[]> = {
+  军礼: ['一只手抬到耳边、手掌贴向耳侧', '手要举过肩膀，手肘抬起来别夹太紧'],
+  挥手: ['抬起一只手，手腕要高过肩膀', '手掌朝向镜头，左右摆动'],
+  推磨: ['双手放在腰腹高度、两只手基本齐平', '双手间距大约一个肩膀宽'],
+}
+/** 通用要点：任务动作没有专属要领时使用 */
+const POSE_GUIDE_FALLBACK = ['上半身完整入镜（能看到肩膀和腰）', '正对镜头，动作保持 1 秒再点识别']
+/** 当前动作的要领列表 */
+const poseGuide = computed(
+  () => POSE_ACTION_GUIDE[currentTask.value?.action ?? ''] ?? POSE_GUIDE_FALLBACK,
+)
 // 问答任务
 const quizPicked = ref(-1)
 const quizWrong = ref(false)
@@ -212,6 +226,7 @@ async function doAction() {
   playTapSound()
   if (!poseCameraOn.value) {
     // 首次点击先拉起摄像头预览，用户对准后再点一次完成识别
+    poseFailCount.value = 0
     await startPoseCamera()
     return
   }
@@ -225,16 +240,23 @@ async function doAction() {
   }
   if (!expected || res.action === expected) {
     actionState.value = 'done'
+    poseFailCount.value = 0
     completeTask()
     return
   }
   actionState.value = 'idle'
+  poseFailCount.value += 1
   playWrongSound()
-  showToast(`没有识别到「${target}」，请面向屏幕再做一次`)
+  showToast(
+    poseFailCount.value >= 2
+      ? `还是没识别到「${target}」，看看下面的动作要点`
+      : `没有识别到「${target}」，按下面的要点再来一次`,
+  )
 }
 
 /** 动作任务结束或切换任务时关闭摄像头，避免指示灯长亮 */
 function closePoseCamera() {
+  poseFailCount.value = 0
   stopPoseCamera()
 }
 
@@ -439,6 +461,17 @@ onUnmounted(() => {
             </svg>
           </button>
           <span class="gesture-wrap__tip">{{ poseTip }}</span>
+          <div class="pose-guide" :class="{ 'is-fail': poseFailCount > 0 }">
+            <p class="pose-guide__title">
+              {{ poseFailCount > 0 ? '没识别到，按下面要点再来一次' : `「${currentTask.action}」动作要点` }}
+            </p>
+            <ul class="pose-guide__list">
+              <li v-for="(item, index) in poseGuide" :key="index">{{ item }}</li>
+            </ul>
+            <p v-if="poseFailCount >= 2" class="pose-guide__extra">
+              还是不行？离镜头 0.5~1.5 米、上半身完整入镜、光线亮一点，动作保持 1 秒再点识别。
+            </p>
+          </div>
           <p v-if="poseCameraError" class="pose-cam__error">{{ poseCameraError }}</p>
           <p v-if="poseRecognizeError" class="pose-cam__error">{{ poseRecognizeError }}</p>
         </div>
@@ -969,6 +1002,43 @@ onUnmounted(() => {
 .pose-cam__error {
   font-size: @font-size-sm;
   color: @color-danger;
+}
+
+// 动作要领引导
+.pose-guide {
+  width: 100%;
+  max-width: 300px;
+  padding: @spacing-sm @spacing-md;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: @radius-base;
+  background: rgba(255, 255, 255, 0.07);
+
+  &.is-fail {
+    border-color: fade(@color-danger, 70%);
+    background: fade(@color-danger, 12%);
+  }
+
+  &__title {
+    margin: 0 0 @spacing-xs;
+    font-size: @font-size-sm;
+    font-weight: 600;
+    color: rgba(255, 255, 255, 0.92);
+  }
+
+  &__list {
+    margin: 0;
+    padding-left: 1.1em;
+    font-size: @font-size-sm;
+    line-height: 1.7;
+    color: rgba(255, 255, 255, 0.72);
+  }
+
+  &__extra {
+    margin: @spacing-xs 0 0;
+    font-size: @font-size-sm;
+    line-height: 1.6;
+    color: @color-warning;
+  }
 }
 
 // 动作任务：手势按钮
