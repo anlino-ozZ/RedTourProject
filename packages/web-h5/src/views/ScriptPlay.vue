@@ -5,7 +5,7 @@
  *      → 全部完成 → 结局剧情 → 解锁成就徽章 + 积分 + 分享/收藏
  * 数据暂为 Mock，动作识别/定位打卡后续接入 ai-engine
  */
-import { computed, onUnmounted, ref, watch } from 'vue'
+import { computed, nextTick, onUnmounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { getScriptById, getAchievements, type Script, type AchievementBadge, type ScriptTask } from '@/api/scripts'
 import {
@@ -151,18 +151,100 @@ const {
   cameraOn: poseCameraOn,
   cameraError: poseCameraError,
   recognizeError: poseRecognizeError,
+  keypoints: poseKeypoints,
+  scanning: poseScanning,
   startCamera: startPoseCamera,
   stopCamera: stopPoseCamera,
-  recognizeOnce: recognizePoseOnce,
+  startScan: startPoseScan,
+  stopScan: stopPoseScan,
 } = usePoseCamera()
 /** 动作任务操作提示 */
 const poseTip = computed(() => {
   const target = currentTask.value?.action ?? '动作'
-  if (actionState.value === 'done') return '识别成功！'
-  if (actionState.value === 'recognizing') return '姿势识别中，请保持动作…'
-  if (!poseCameraOn.value) return `点击按钮开启摄像头，面向屏幕做「${target}」`
-  return `对准镜头做出「${target}」，再点按钮识别`
+  if (actionState.value === 'done') return '识别成功，已自动结束识别'
+  if (poseScanning.value) return '识别中，请保持动作…（再点按钮可停止）'
+  if (!poseCameraOn.value) return '点击按钮开启摄像头'
+  return `对准镜头做出「${target}」，点按钮开始识别`
 })
+
+/** COCO 17 点骨架连线，用于在预览画面上叠加姿态提示 */
+const POSE_SKELETON_EDGES: [number, number][] = [
+  [0, 1], [0, 2], [1, 3], [2, 4],
+  [5, 6], [5, 7], [7, 9], [6, 8], [8, 10],
+  [5, 11], [6, 12], [11, 12],
+  [11, 13], [13, 15], [12, 14], [14, 16],
+]
+const poseCanvasRef = ref<HTMLCanvasElement | null>(null)
+
+/** 把最近一帧的骨架画到预览上（预览是 object-fit: cover + 镜像，这里做同样的坐标映射） */
+function drawPoseSkeleton() {
+  const canvas = poseCanvasRef.value
+  const video = poseVideoRef.value
+  if (!canvas || !video) return
+  const boxWidth = canvas.clientWidth
+  const boxHeight = canvas.clientHeight
+  if (!boxWidth || !boxHeight) return
+  if (canvas.width !== boxWidth || canvas.height !== boxHeight) {
+    canvas.width = boxWidth
+    canvas.height = boxHeight
+  }
+  const ctx = canvas.getContext('2d')
+  if (!ctx) return
+  ctx.clearRect(0, 0, boxWidth, boxHeight)
+  const points = poseKeypoints.value
+  if (points.length !== 17) return
+
+  const frameAspect =
+    video.videoWidth && video.videoHeight ? video.videoWidth / video.videoHeight : 4 / 3
+  const boxAspect = boxWidth / boxHeight
+  let drawWidth: number
+  let drawHeight: number
+  let offsetX: number
+  let offsetY: number
+  if (frameAspect > boxAspect) {
+    drawWidth = boxWidth
+    drawHeight = boxWidth / frameAspect
+    offsetX = 0
+    offsetY = (boxHeight - drawHeight) / 2
+  } else {
+    drawHeight = boxHeight
+    drawWidth = boxHeight * frameAspect
+    offsetX = (boxWidth - drawWidth) / 2
+    offsetY = 0
+  }
+  const toXY = (index: number): [number, number] => {
+    const point = points[index]
+    const x = offsetX + point[0] * drawWidth
+    const y = offsetY + point[1] * drawHeight
+    // 预览画面做了水平镜像，坐标同步翻转才能对齐
+    return [boxWidth - x, y]
+  }
+
+  ctx.lineCap = 'round'
+  ctx.lineWidth = 3
+  ctx.strokeStyle = '#ff2d55'
+  for (const [from, to] of POSE_SKELETON_EDGES) {
+    const [x1, y1] = toXY(from)
+    const [x2, y2] = toXY(to)
+    ctx.beginPath()
+    ctx.moveTo(x1, y1)
+    ctx.lineTo(x2, y2)
+    ctx.stroke()
+  }
+  for (let index = 0; index < 17; index += 1) {
+    const [x, y] = toXY(index)
+    ctx.beginPath()
+    ctx.arc(x, y, 4, 0, Math.PI * 2)
+    ctx.fillStyle = '#fff'
+    ctx.fill()
+    ctx.lineWidth = 2
+    ctx.strokeStyle = '#ff2d55'
+    ctx.stroke()
+  }
+}
+
+watch(poseKeypoints, () => drawPoseSkeleton())
+watch(poseCameraOn, () => nextTick(drawPoseSkeleton))
 /** 连续识别失败次数：用于逐级给出更具体的引导 */
 const poseFailCount = ref(0)
 /** 各动作的关键要领（对应 ai-engine 判定规则：敬礼看手腕是否到耳边，挥手看手腕是否高过肩，推磨看双手高度与间距） */
@@ -220,38 +302,36 @@ function completeTask(scoreDelaySec = 0) {
   }, 1000)
 }
 
-/** 动作任务：开启摄像头 → 截帧调用 /pose/recognize → 命中目标动作才算通过 */
+/** 动作任务：开启摄像头 → 连续识别 → 命中目标动作自动结束识别 */
 async function doAction() {
-  if (actionState.value === 'done' || actionState.value === 'recognizing') return
+  if (actionState.value === 'done') return
   playTapSound()
   if (!poseCameraOn.value) {
-    // 首次点击先拉起摄像头预览，用户对准后再点一次完成识别
     poseFailCount.value = 0
     await startPoseCamera()
     return
   }
-  const target = currentTask.value?.action ?? ''
-  const expected = SCRIPT_ACTION_TO_POSE[target] ?? ''
-  actionState.value = 'recognizing'
-  const res = await recognizePoseOnce()
-  if (!res) {
+  if (poseScanning.value) {
+    // 识别中再点一次 = 主动停止
+    stopPoseScan()
     actionState.value = 'idle'
     return
   }
-  if (!expected || res.action === expected) {
-    actionState.value = 'done'
-    poseFailCount.value = 0
-    completeTask()
-    return
-  }
-  actionState.value = 'idle'
-  poseFailCount.value += 1
-  playWrongSound()
-  showToast(
-    poseFailCount.value >= 2
-      ? `还是没识别到「${target}」，看看下面的动作要点`
-      : `没有识别到「${target}」，按下面的要点再来一次`,
-  )
+  const target = currentTask.value?.action ?? ''
+  const expected = SCRIPT_ACTION_TO_POSE[target] ?? ''
+  poseFailCount.value = 0
+  actionState.value = 'recognizing'
+  startPoseScan((res) => {
+    if (!expected || res.action === expected) {
+      actionState.value = 'done'
+      poseFailCount.value = 0
+      completeTask()
+      return true
+    }
+    // 没命中就继续识别，同时累加失败次数用于逐步给出更具体的引导
+    poseFailCount.value += 1
+    return false
+  })
 }
 
 /** 动作任务结束或切换任务时关闭摄像头，避免指示灯长亮 */
@@ -447,6 +527,7 @@ onUnmounted(() => {
         <div class="gesture-wrap">
           <div v-if="poseCameraOn" class="pose-cam">
             <video ref="poseVideoRef" class="pose-cam__video" playsinline muted />
+            <canvas ref="poseCanvasRef" class="pose-cam__skeleton" />
             <span class="pose-cam__badge">{{ currentTask.action }}</span>
           </div>
           <button
@@ -985,6 +1066,14 @@ onUnmounted(() => {
     object-fit: cover;
     // 前置摄像头镜像，符合照镜子的直觉
     transform: scaleX(-1);
+  }
+
+  &__skeleton {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
   }
 
   &__badge {

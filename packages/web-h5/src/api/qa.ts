@@ -75,7 +75,7 @@ export async function getRecommendations(
 /** 将后端返回的音频地址解析为可播放地址（相对路径拼接后端 origin，dev 下 /audio 不在 5173 上） */
 export function resolveTtsUrl(url: string): string {
   if (/^https?:\/\//i.test(url)) return url
-  const origin = new URL(import.meta.env.VITE_API_BASE_URL).origin
+  const origin = new URL(import.meta.env.VITE_API_BASE_URL, window.location.origin).origin
   return `${origin}${url.startsWith('/') ? '' : '/'}${url}`
 }
 

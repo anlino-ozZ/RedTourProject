@@ -33,21 +33,34 @@ export function recognizePose(
 }
 
 /** 截取 video 当前帧并转成后端需要的 Base64（JPEG 压缩以控制体积） */
-export function captureFrameFromVideo(video: HTMLVideoElement, maxWidth = 480): string {
-  if (!video.videoWidth || !video.videoHeight) return ''
+/** 截帧结果：Base64 数据 + 截帧画布尺寸（用于把后端关键点坐标映射回画面） */
+export interface CapturedFrame {
+  data: string
+  width: number
+  height: number
+}
+
+/** 截取 video 当前帧，返回 Base64 与画布尺寸；画面未就绪时返回 null */
+export function captureFrame(video: HTMLVideoElement, maxWidth = 480): CapturedFrame | null {
+  if (!video.videoWidth || !video.videoHeight) return null
   const canvas = document.createElement('canvas')
   const scale = video.videoWidth > maxWidth ? maxWidth / video.videoWidth : 1
   canvas.width = Math.max(1, Math.round(video.videoWidth * scale))
   canvas.height = Math.max(1, Math.round(video.videoHeight * scale))
   const ctx = canvas.getContext('2d')
-  if (!ctx) return ''
+  if (!ctx) return null
   ctx.drawImage(video, 0, 0, canvas.width, canvas.height)
-  return canvas.toDataURL('image/jpeg', 0.8).replace(/^data:image\/\w+;base64,/, '')
+  const data = canvas.toDataURL('image/jpeg', 0.8).replace(/^data:image\/\w+;base64,/, '')
+  return { data, width: canvas.width, height: canvas.height }
+}
+
+export function captureFrameFromVideo(video: HTMLVideoElement, maxWidth = 480): string {
+  return captureFrame(video, maxWidth)?.data ?? ''
 }
 
 /** 将后端返回的讲解音频地址解析为可播放地址（相对路径拼接后端 origin） */
 export function resolvePoseAudioUrl(url: string): string {
   if (/^https?:\/\//i.test(url)) return url
-  const origin = new URL(import.meta.env.VITE_API_BASE_URL).origin
+  const origin = new URL(import.meta.env.VITE_API_BASE_URL, window.location.origin).origin
   return `${origin}${url.startsWith('/') ? '' : '/'}${url}`
 }
