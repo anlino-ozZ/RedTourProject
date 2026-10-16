@@ -5,7 +5,7 @@
  *      → 全部完成 → 结局剧情 → 解锁成就徽章 + 积分 + 分享/收藏
  * 数据暂为 Mock，动作识别/定位打卡后续接入 ai-engine
  */
-import { computed, onUnmounted, ref, watch } from 'vue'
+import { computed, nextTick, onUnmounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { getScriptById, getAchievements, type Script, type AchievementBadge, type ScriptTask } from '@/api/scripts'
 import {
@@ -18,6 +18,8 @@ import {
 } from '@/utils/sound'
 import { addPoints } from '@/utils/levelStorage'
 import { unlockBadge } from '@/utils/achievementStorage'
+import { POSE_ACTION_LABEL } from '@/api/pose'
+import { usePoseCamera } from '@/composables/usePoseCamera'
 
 const router = useRouter()
 const route = useRoute()
@@ -137,6 +139,138 @@ function startScript() {
 // ===== 任务循环 =====
 // 动作任务
 const actionState = ref<'idle' | 'recognizing' | 'done'>('idle')
+/** 剧本动作名 → 后端动作码（ai-engine 目前仅识别 salute / mill / wave） */
+const SCRIPT_ACTION_TO_POSE: Record<string, string> = {
+  军礼: 'salute',
+  敬礼: 'salute',
+  挥手: 'wave',
+  推磨: 'mill',
+}
+/** 姿态识别：真实开启摄像头并调用 POST /pose/recognize */
+const {
+  videoRef: poseVideoRef,
+  cameraOn: poseCameraOn,
+  cameraError: poseCameraError,
+  recognizeError: poseRecognizeError,
+  keypoints: poseKeypoints,
+  lastAction: poseLastAction,
+  scanning: poseScanning,
+  startCamera: startPoseCamera,
+  stopCamera: stopPoseCamera,
+  startScan: startPoseScan,
+  stopScan: stopPoseScan,
+} = usePoseCamera()
+/** 动作任务操作提示 */
+const poseTip = computed(() => {
+  const target = currentTask.value?.action ?? '动作'
+  if (actionState.value === 'done') return '识别成功，已自动结束识别'
+  if (poseScanning.value) return '识别中，请保持动作…（再点按钮可停止）'
+  if (!poseCameraOn.value) return '点击按钮开启摄像头'
+  return `对准镜头做出「${target}」，点按钮开始识别`
+})
+
+/** COCO 17 点骨架连线，用于在预览画面上叠加姿态提示 */
+const POSE_SKELETON_EDGES: [number, number][] = [
+  [0, 1], [0, 2], [1, 3], [2, 4],
+  [5, 6], [5, 7], [7, 9], [6, 8], [8, 10],
+  [5, 11], [6, 12], [11, 12],
+  [11, 13], [13, 15], [12, 14], [14, 16],
+]
+const poseCanvasRef = ref<HTMLCanvasElement | null>(null)
+
+/** 把最近一帧的骨架画到预览上（预览是 object-fit: cover + 镜像，这里做同样的坐标映射） */
+function drawPoseSkeleton() {
+  const canvas = poseCanvasRef.value
+  const video = poseVideoRef.value
+  if (!canvas || !video) return
+  const boxWidth = canvas.clientWidth
+  const boxHeight = canvas.clientHeight
+  if (!boxWidth || !boxHeight) return
+  if (canvas.width !== boxWidth || canvas.height !== boxHeight) {
+    canvas.width = boxWidth
+    canvas.height = boxHeight
+  }
+  const ctx = canvas.getContext('2d')
+  if (!ctx) return
+  ctx.clearRect(0, 0, boxWidth, boxHeight)
+  const points = poseKeypoints.value
+  if (points.length !== 17) return
+
+  const frameAspect =
+    video.videoWidth && video.videoHeight ? video.videoWidth / video.videoHeight : 4 / 3
+  const boxAspect = boxWidth / boxHeight
+  let drawWidth: number
+  let drawHeight: number
+  let offsetX: number
+  let offsetY: number
+  if (frameAspect > boxAspect) {
+    drawWidth = boxWidth
+    drawHeight = boxWidth / frameAspect
+    offsetX = 0
+    offsetY = (boxHeight - drawHeight) / 2
+  } else {
+    drawHeight = boxHeight
+    drawWidth = boxHeight * frameAspect
+    offsetX = (boxWidth - drawWidth) / 2
+    offsetY = 0
+  }
+  const toXY = (index: number): [number, number] => {
+    const point = points[index]
+    const x = offsetX + point[0] * drawWidth
+    const y = offsetY + point[1] * drawHeight
+    // 预览画面做了水平镜像，坐标同步翻转才能对齐
+    return [boxWidth - x, y]
+  }
+
+  ctx.lineCap = 'round'
+  ctx.lineWidth = 3
+  ctx.strokeStyle = '#ff2d55'
+  for (const [from, to] of POSE_SKELETON_EDGES) {
+    const [x1, y1] = toXY(from)
+    const [x2, y2] = toXY(to)
+    ctx.beginPath()
+    ctx.moveTo(x1, y1)
+    ctx.lineTo(x2, y2)
+    ctx.stroke()
+  }
+  for (let index = 0; index < 17; index += 1) {
+    const [x, y] = toXY(index)
+    ctx.beginPath()
+    ctx.arc(x, y, 4, 0, Math.PI * 2)
+    ctx.fillStyle = '#fff'
+    ctx.fill()
+    ctx.lineWidth = 2
+    ctx.strokeStyle = '#ff2d55'
+    ctx.stroke()
+  }
+}
+
+watch(poseKeypoints, () => drawPoseSkeleton())
+watch(poseCameraOn, () => nextTick(drawPoseSkeleton))
+
+/** 最近一次识别出的动作中文名：用于在预览上反馈"实际识别成了什么" */
+const poseActionLabel = computed(() => POSE_ACTION_LABEL[poseLastAction.value] ?? '')
+/** 连续识别失败次数：用于逐级给出更具体的引导 */
+const poseFailCount = ref(0)
+/** 各动作的关键要领（对应 ai-engine 判定规则：敬礼看手腕是否到耳边，挥手看手腕是否高过肩，推磨看双手高度与间距） */
+const POSE_ACTION_GUIDE: Record<string, string[]> = {
+  军礼: ['一只手抬到耳边、手掌贴向耳侧', '手要举过肩膀，手肘抬起来别夹太紧'],
+  挥手: [
+    '整条手臂举高，手腕要高出肩膀一大截（差不多到头顶的高度）',
+    '手要放在身体侧前方摆动，离头远一点：贴到头边会被判成「敬礼」',
+  ],
+  推磨: ['双手放在腰腹高度、两只手基本齐平', '双手间距大约一个肩膀宽'],
+}
+/** 通用要点：任务动作没有专属要领时使用 */
+const POSE_GUIDE_FALLBACK = [
+  '上半身完整入镜（能看到肩膀和腰）',
+  '手和身体都留在画面里，别挥出镜头',
+  '正对镜头，动作放慢一点',
+]
+/** 当前动作的要领列表 */
+const poseGuide = computed(
+  () => POSE_ACTION_GUIDE[currentTask.value?.action ?? ''] ?? POSE_GUIDE_FALLBACK,
+)
 // 问答任务
 const quizPicked = ref(-1)
 const quizWrong = ref(false)
@@ -165,6 +299,7 @@ function completeTask(scoreDelaySec = 0) {
   setTimeout(() => {
     // 重置本任务状态
     actionState.value = 'idle'
+    closePoseCamera()
     quizPicked.value = -1
     quizWrong.value = false
     quizCorrect.value = false
@@ -179,14 +314,42 @@ function completeTask(scoreDelaySec = 0) {
   }, 1000)
 }
 
-/** 动作任务：模拟姿势识别（识别中 1.2s → 成功） */
-function doAction() {
-  if (actionState.value !== 'idle') return
+/** 动作任务：开启摄像头 → 连续识别 → 命中目标动作自动结束识别 */
+async function doAction() {
+  if (actionState.value === 'done') return
+  playTapSound()
+  if (!poseCameraOn.value) {
+    poseFailCount.value = 0
+    await startPoseCamera()
+    return
+  }
+  if (poseScanning.value) {
+    // 识别中再点一次 = 主动停止
+    stopPoseScan()
+    actionState.value = 'idle'
+    return
+  }
+  const target = currentTask.value?.action ?? ''
+  const expected = SCRIPT_ACTION_TO_POSE[target] ?? ''
+  poseFailCount.value = 0
   actionState.value = 'recognizing'
-  setTimeout(() => {
-    actionState.value = 'done'
-    completeTask()
-  }, 1200)
+  startPoseScan((res) => {
+    if (!expected || res.action === expected) {
+      actionState.value = 'done'
+      poseFailCount.value = 0
+      completeTask()
+      return true
+    }
+    // 没命中就继续识别，同时累加失败次数用于逐步给出更具体的引导
+    poseFailCount.value += 1
+    return false
+  })
+}
+
+/** 动作任务结束或切换任务时关闭摄像头，避免指示灯长亮 */
+function closePoseCamera() {
+  poseFailCount.value = 0
+  stopPoseCamera()
 }
 
 /** 问答任务：答错 → 提示重试 + 引导帮助；答对 → 过 */
@@ -233,19 +396,43 @@ function toReward() {
   const { isNew } = unlockBadge(script.value!.reward.badgeId)
   badgeIsNew.value = isNew
   if (isNew) shineTimer = setTimeout(() => playBadgeShineSound(), 900)
-  // 撒花彩带（确定性伪随机，避免每次渲染位置跳动）
-  confetti.value = Array.from({ length: 28 }, (_, i) => ({
-    left: `${(i * 37) % 100}%`,
-    bg: CONFETTI_COLORS[i % CONFETTI_COLORS.length],
-    delay: `${((i * 13) % 10) / 10}s`,
-    dur: `${2.4 + ((i * 7) % 10) / 8}s`,
-  }))
+  // 撒花（确定性伪随机，避免每次渲染位置跳动）
+  // 小方片 / 圆点 / 短条混排，负延迟让粒子一出现就均匀铺满全屏，不会挤成一条横带
+  confetti.value = Array.from({ length: 72 }, (_, i) => {
+    const mode = i % 5
+    const width = 5 + ((i * 7) % 4) * 3
+    const height = mode === 1 ? width : mode === 2 ? width * 2.1 : width * 0.6
+    const dur = 4.6 + (i % 7) * 0.45
+    return {
+      left: `${(i * 19 + 7) % 98}%`,
+      width: `${width.toFixed(1)}px`,
+      height: `${height.toFixed(1)}px`,
+      radius: mode === 2 ? '1px' : mode === 3 ? '999px' : '2px',
+      bg: CONFETTI_COLORS[i % CONFETTI_COLORS.length],
+      delay: `-${((i * 1.13) % dur).toFixed(2)}s`,
+      dur: `${dur.toFixed(2)}s`,
+      drift: `${(((i * 7) % 17) - 8) * 6}px`,
+      sway: `${6 + ((i * 11) % 14)}px`,
+    }
+  })
 }
 
 // ===== 通关奖励：解锁动画与撒花 =====
 const badgeIsNew = ref(false)
-const confetti = ref<Array<{ left: string; bg: string; delay: string; dur: string }>>([])
-const CONFETTI_COLORS = ['#c41e3a', '#d4af37', '#e8c96a', '#f5f0e6', '#e2703a', '#8f1d2c']
+const confetti = ref<
+  Array<{
+    left: string
+    width: string
+    height: string
+    radius: string
+    bg: string
+    delay: string
+    dur: string
+    drift: string
+    sway: string
+  }>
+>([])
+const CONFETTI_COLORS = ['#d92b4b', '#e6b422', '#f08b3a', '#f7efe2', '#ffd66b', '#a8202f', '#8f1d2c']
 let shineTimer: ReturnType<typeof setTimeout> | undefined
 
 function onShare() {
@@ -371,13 +558,22 @@ onUnmounted(() => {
       </div>
       <p class="task-head__hint">{{ currentTask.hint }}</p>
 
-      <!-- 动作任务 -->
+      <!-- 动作任务：真实调用摄像头 + POST /pose/recognize -->
       <div v-if="currentTask.type === 'action'" class="task-body task-body--action">
         <div class="gesture-wrap">
+          <div v-if="poseCameraOn" class="pose-cam">
+            <video ref="poseVideoRef" class="pose-cam__video" playsinline muted />
+            <canvas ref="poseCanvasRef" class="pose-cam__skeleton" />
+            <span class="pose-cam__badge">{{ currentTask.action }}</span>
+            <span class="pose-cam__detect" :class="{ 'is-ok': poseKeypoints.length === 17 }">
+              {{ poseKeypoints.length === 17 ? '已检测到人体' : '未检测到人体' }}
+              <template v-if="poseActionLabel"> · 识别到「{{ poseActionLabel }}」</template>
+            </span>
+          </div>
           <button
             class="gesture-btn"
             :class="{ 'is-done': actionState === 'done', 'is-busy': actionState === 'recognizing' }"
-            aria-label="行军礼"
+            :aria-label="currentTask.action"
             @click="doAction"
           >
             <svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -385,11 +581,20 @@ onUnmounted(() => {
               <path d="M18 8a2 2 0 114 0v6a8 8 0 01-8 8h-2c-2.8 0-4.5-.86-5.99-2.34l-3.6-3.6a2 2 0 012.83-2.82L7 15" />
             </svg>
           </button>
-          <span class="gesture-wrap__tip">
-            {{ actionState === 'idle' && '点击按钮，面向屏幕行一个军礼'
-              || actionState === 'recognizing' && '姿势识别中…'
-              || '识别成功！' }}
-          </span>
+          <span class="gesture-wrap__tip">{{ poseTip }}</span>
+          <div class="pose-guide" :class="{ 'is-fail': poseFailCount > 0 }">
+            <p class="pose-guide__title">
+              {{ poseFailCount > 0 ? '没识别到，按下面要点再来一次' : `「${currentTask.action}」动作要点` }}
+            </p>
+            <ul class="pose-guide__list">
+              <li v-for="(item, index) in poseGuide" :key="index">{{ item }}</li>
+            </ul>
+            <p v-if="poseFailCount >= 2" class="pose-guide__extra">
+              还是不行？离镜头 0.5~1.5 米、上半身完整入镜、光线亮一点，动作保持 1 秒再点识别。
+            </p>
+          </div>
+          <p v-if="poseCameraError" class="pose-cam__error">{{ poseCameraError }}</p>
+          <p v-if="poseRecognizeError" class="pose-cam__error">{{ poseRecognizeError }}</p>
         </div>
       </div>
 
@@ -478,9 +683,14 @@ onUnmounted(() => {
           class="confetti__piece"
           :style="{
             left: c.left,
+            width: c.width,
+            height: c.height,
+            borderRadius: c.radius,
             background: c.bg,
             animationDelay: c.delay,
             animationDuration: c.dur,
+            '--drift': c.drift,
+            '--sway': c.sway,
           }"
         />
       </div>
@@ -882,6 +1092,106 @@ onUnmounted(() => {
   }
 }
 
+// 动作任务：摄像头预览
+.pose-cam {
+  position: relative;
+  width: 60vw;
+  max-width: 240px;
+  aspect-ratio: 3 / 4;
+  overflow: hidden;
+  border: 2px solid rgba(255, 255, 255, 0.3);
+  border-radius: @radius-lg;
+  background: #000;
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.45);
+
+  &__video {
+    display: block;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    // 前置摄像头镜像，符合照镜子的直觉
+    transform: scaleX(-1);
+  }
+
+  &__skeleton {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+  }
+
+  &__detect {
+    position: absolute;
+    right: @spacing-sm;
+    bottom: @spacing-sm;
+    left: @spacing-sm;
+    padding: 2px 10px;
+    border-radius: @radius-sm;
+    background: rgba(0, 0, 0, 0.55);
+    color: rgba(255, 255, 255, 0.85);
+    font-size: @font-size-sm;
+    text-align: center;
+
+    &.is-ok {
+      color: #b7eb8f;
+    }
+  }
+
+  &__badge {
+    position: absolute;
+    top: @spacing-sm;
+    left: @spacing-sm;
+    padding: 2px 10px;
+    border-radius: 999px;
+    background: rgba(196, 30, 58, 0.85);
+    color: #fff;
+    font-size: @font-size-sm;
+  }
+}
+
+.pose-cam__error {
+  font-size: @font-size-sm;
+  color: @color-danger;
+}
+
+// 动作要领引导
+.pose-guide {
+  width: 100%;
+  max-width: 300px;
+  padding: @spacing-sm @spacing-md;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: @radius-base;
+  background: rgba(255, 255, 255, 0.07);
+
+  &.is-fail {
+    border-color: fade(@color-danger, 70%);
+    background: fade(@color-danger, 12%);
+  }
+
+  &__title {
+    margin: 0 0 @spacing-xs;
+    font-size: @font-size-sm;
+    font-weight: 600;
+    color: rgba(255, 255, 255, 0.92);
+  }
+
+  &__list {
+    margin: 0;
+    padding-left: 1.1em;
+    font-size: @font-size-sm;
+    line-height: 1.7;
+    color: rgba(255, 255, 255, 0.72);
+  }
+
+  &__extra {
+    margin: @spacing-xs 0 0;
+    font-size: @font-size-sm;
+    line-height: 1.6;
+    color: @color-warning;
+  }
+}
+
 // 动作任务：手势按钮
 .gesture-wrap {
   display: flex;
@@ -1065,22 +1375,32 @@ onUnmounted(() => {
 
   &__piece {
     position: absolute;
-    top: -14px;
-    width: 8px;
-    height: 14px;
-    border-radius: 2px;
-    opacity: 0.95;
-    animation: confetti-fall 3s ease-in forwards;
+    top: 0;
+    // 每片独立的横向落点与摆动幅度，由内联样式注入
+    --drift: 0px;
+    --sway: 10px;
+    opacity: 0;
+    animation: confetti-fall 5.4s ease-in infinite;
+    will-change: transform, opacity;
   }
 }
 
 @keyframes confetti-fall {
   0% {
-    transform: translateY(-10vh) rotate(0deg);
+    transform: translate3d(0, -14vh, 0) rotate(0deg);
+    opacity: 0;
+  }
+  10% {
     opacity: 1;
   }
+  35% {
+    transform: translate3d(var(--sway), 24vh, 0) rotate(190deg);
+  }
+  65% {
+    transform: translate3d(calc(var(--sway) * -0.8), 60vh, 0) rotate(400deg);
+  }
   100% {
-    transform: translateY(110vh) rotate(720deg);
+    transform: translate3d(var(--drift), 116vh, 0) rotate(620deg);
     opacity: 0.5;
   }
 }

@@ -18,7 +18,14 @@ export default defineConfig({
     open: false,
     proxy: {
       // 后端 API 与 TTS 音频资源统一代理到 server-business（8000）
-      '/api': { target: 'http://localhost:8000', changeOrigin: true },
+      // timeout / proxyTimeout 必须不小于前端 axios 超时（见 src/api/timeouts.ts）：
+      // 问答走本地模型推理需 110~215s，dev 代理默认可能先断开连接
+      '/api': {
+        target: 'http://localhost:8000',
+        changeOrigin: true,
+        timeout: 360000,
+        proxyTimeout: 360000,
+      },
       '/audio': { target: 'http://localhost:8000', changeOrigin: true },
     },
   },

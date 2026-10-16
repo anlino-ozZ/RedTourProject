@@ -10,6 +10,7 @@ import {
   type OrderItem,
 } from '@/mock/profile'
 import UserAvatar from '@/components/UserAvatar.vue'
+import MedalBadge from '@/components/MedalBadge.vue'
 import {
   AVATAR_PRESETS,
   DEFAULT_PROFILE,
@@ -173,6 +174,26 @@ const filteredOrders = computed(() =>
 )
 
 const allStats = computed(() => user.value.stats)
+
+// ===== 游览足迹：按日期查看 =====
+/** 日期筛选的"全部"哨兵值 */
+const FOOTPRINT_ALL = 'all'
+const footprintDate = ref<string>(FOOTPRINT_ALL)
+/** 当前筛选出的足迹分组（选"全部"则按日期分组全展示） */
+const visibleFootprintGroups = computed(() =>
+  footprintDate.value === FOOTPRINT_ALL
+    ? footprintGroups
+    : footprintGroups.filter((g) => g.date === footprintDate.value),
+)
+const footprintTotal = computed(() =>
+  footprintGroups.reduce((sum, g) => sum + g.items.length, 0),
+)
+
+function selectFootprintDate(date: string) {
+  if (footprintDate.value === date) return
+  playTapSound()
+  footprintDate.value = date
+}
 
 function onFootprintAction(to?: string) {
   if (to) router.push(to)
@@ -461,38 +482,13 @@ async function onLogout() {
           v-for="m in medals"
           :key="m.name"
           class="profile__medal"
+          :class="{ 'is-earned': m.earned }"
           role="button"
           tabindex="0"
           @click="openMedal(m)"
           @keyup.enter="openMedal(m)"
         >
-          <div class="profile__medal-icon" :class="{ 'is-locked': !m.earned }" :style="{ color: medalColor(m) }">
-            <svg v-if="m.icon === 'star'" viewBox="0 0 24 24" fill="currentColor">
-              <path d="M12 2l2.9 6.3 6.9.8-5.1 4.7 1.4 6.8L12 17.8 5.9 20.6l1.4-6.8L2.2 9.1l6.9-.8L12 2z" />
-            </svg>
-            <svg v-else-if="m.icon === 'check'" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-              <circle cx="12" cy="12" r="10" fill="currentColor" stroke="none" opacity="0.12" />
-              <path d="M8 12.5l2.8 2.8L16 10" />
-            </svg>
-            <svg v-else-if="m.icon === 'trophy'" viewBox="0 0 24 24" fill="currentColor">
-              <path d="M6 4h12v2a6 6 0 01-12 0V4zm0 2v0a4 4 0 008 0H6zm2 8h8l-1 6H9l-1-6zm-3-6h2v2a4 4 0 01-2-2zm14 0h-2v2a4 4 0 002-2z" />
-            </svg>
-            <svg v-else-if="m.icon === 'map'" viewBox="0 0 24 24" fill="currentColor">
-              <path d="M12 2a7 7 0 00-7 7c0 5.25 7 13 7 13s7-7.75 7-13a7 7 0 00-7-7zm0 9.5A2.5 2.5 0 1112 6.5a2.5 2.5 0 010 5z" />
-            </svg>
-            <svg v-else-if="m.icon === 'fire'" viewBox="0 0 24 24" fill="currentColor">
-              <path d="M13.5 2s4.5 4 4.5 8.5a6 6 0 01-12 0c0-2 1-3.5 1-3.5s2 2.5 3 2.5c0-3 3.5-7.5 3.5-7.5zM12 22a5 5 0 01-5-5c0-2 1-3.5 2.5-4.5.5 1.5 1.5 2.5 2.5 3 .5-2 1.5-3 2.5-3.5C16 12.5 17 14 17 16a5 5 0 01-5 6z" />
-            </svg>
-            <svg v-else-if="m.icon === 'book'" viewBox="0 0 24 24" fill="currentColor">
-              <path d="M4 4h6a3 3 0 013 3v13a2 2 0 00-2-2H4V4zm16 0h-6a3 3 0 00-3 3v13a2 2 0 012-2h7V4z" />
-            </svg>
-            <svg v-else-if="m.icon === 'flag'" viewBox="0 0 24 24" fill="currentColor">
-              <path d="M5 3h2v18H5V3zm2 3h12l-2 4 2 4H7V6z" />
-            </svg>
-            <svg v-else viewBox="0 0 24 24" fill="currentColor">
-              <path d="M17 9V7a5 5 0 00-10 0v2H5v13h14V9h-2zm-8-2a3 3 0 016 0v2H9V7z" />
-            </svg>
-          </div>
+          <MedalBadge :icon="m.icon" :earned="m.earned" :color="medalColor(m)" />
           <div class="profile__medal-name">{{ m.name }}</div>
         </div>
       </div>
@@ -543,36 +539,68 @@ async function onLogout() {
       </div>
     </section>
 
-    <!-- 游览足迹 -->
-    <section v-for="g in footprintGroups" :key="g.date" class="profile__footprint">
+    <!-- 游览足迹：可选择日期查看 -->
+    <section class="profile__footprint">
       <div class="profile__section-title">
-        <span>游览足迹（{{ g.date }}）</span>
+        <span>游览足迹</span>
+        <span class="profile__footprint-total">共 {{ footprintTotal }} 条记录</span>
       </div>
-      <div
-        v-for="item in g.items"
-        :key="item.id"
-        class="profile__footprint-card"
-        :class="{ 'is-clickable': !!item.actionTo }"
-        role="button"
-        :tabindex="item.actionTo ? 0 : -1"
-        @click="onFootprintCard(item.actionTo)"
-        @keyup.enter="onFootprintCard(item.actionTo)"
-      >
-        <div class="profile__footprint-main">
-          <div class="profile__footprint-title">{{ item.title }}</div>
-          <div class="profile__footprint-meta">{{ item.meta }}</div>
-          <div v-if="item.tags?.length" class="profile__footprint-tags">
-            <span v-for="t in item.tags" :key="t" class="profile__tag">{{ t }}</span>
+
+      <div class="profile__footprint-dates">
+        <button
+          type="button"
+          class="profile__footprint-date"
+          :class="{ 'is-active': footprintDate === FOOTPRINT_ALL }"
+          @click="selectFootprintDate(FOOTPRINT_ALL)"
+        >
+          全部
+        </button>
+        <button
+          v-for="g in footprintGroups"
+          :key="g.date"
+          type="button"
+          class="profile__footprint-date"
+          :class="{ 'is-active': footprintDate === g.date }"
+          @click="selectFootprintDate(g.date)"
+        >
+          {{ g.date }}
+        </button>
+      </div>
+
+      <div v-for="g in visibleFootprintGroups" :key="g.date" class="profile__footprint-day">
+        <div class="profile__footprint-day-label">
+          {{ g.date }} · {{ g.items.length }} 条记录
+        </div>
+        <div
+          v-for="item in g.items"
+          :key="item.id"
+          class="profile__footprint-card"
+          :class="{ 'is-clickable': !!item.actionTo }"
+          role="button"
+          :tabindex="item.actionTo ? 0 : -1"
+          @click="onFootprintCard(item.actionTo)"
+          @keyup.enter="onFootprintCard(item.actionTo)"
+        >
+          <div class="profile__footprint-main">
+            <div class="profile__footprint-title">{{ item.title }}</div>
+            <div class="profile__footprint-meta">{{ item.meta }}</div>
+            <div v-if="item.tags?.length" class="profile__footprint-tags">
+              <span v-for="t in item.tags" :key="t" class="profile__tag">{{ t }}</span>
+            </div>
+            <div v-if="item.progress != null" class="profile__progress">
+              <div class="profile__progress-bar" :style="{ width: item.progress + '%' }" />
+            </div>
           </div>
-          <div v-if="item.progress != null" class="profile__progress">
-            <div class="profile__progress-bar" :style="{ width: item.progress + '%' }" />
+          <div v-if="item.actionText" class="profile__footprint-action">
+            <button class="profile__btn-action" @click="onFootprintAction(item.actionTo)">
+              {{ item.actionText }} <span class="profile__arrow-sm">›</span>
+            </button>
           </div>
         </div>
-        <div v-if="item.actionText" class="profile__footprint-action">
-          <button class="profile__btn-action" @click="onFootprintAction(item.actionTo)">
-            {{ item.actionText }} <span class="profile__arrow-sm">›</span>
-          </button>
-        </div>
+      </div>
+
+      <div v-if="!visibleFootprintGroups.length" class="profile__footprint-empty">
+        这一天还没有足迹记录
       </div>
     </section>
 
@@ -589,36 +617,13 @@ async function onLogout() {
         >
           <button class="pf-sheet__close" aria-label="关闭" @click="closeMedal">×</button>
 
-          <div
-            class="pf-medal-card__icon"
-            :style="{ color: medalColor(selectedMedal) }"
-          >
-            <svg v-if="selectedMedal.icon === 'star'" viewBox="0 0 24 24" fill="currentColor">
-              <path d="M12 2l2.9 6.3 6.9.8-5.1 4.7 1.4 6.8L12 17.8 5.9 20.6l1.4-6.8L2.2 9.1l6.9-.8L12 2z" />
-            </svg>
-            <svg v-else-if="selectedMedal.icon === 'check'" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-              <circle cx="12" cy="12" r="10" fill="currentColor" stroke="none" opacity="0.12" />
-              <path d="M8 12.5l2.8 2.8L16 10" />
-            </svg>
-            <svg v-else-if="selectedMedal.icon === 'trophy'" viewBox="0 0 24 24" fill="currentColor">
-              <path d="M6 4h12v2a6 6 0 01-12 0V4zm0 2v0a4 4 0 008 0H6zm2 8h8l-1 6H9l-1-6zm-3-6h2v2a4 4 0 01-2-2zm14 0h-2v2a4 4 0 002-2z" />
-            </svg>
-            <svg v-else-if="selectedMedal.icon === 'map'" viewBox="0 0 24 24" fill="currentColor">
-              <path d="M12 2a7 7 0 00-7 7c0 5.25 7 13 7 13s7-7.75 7-13a7 7 0 00-7-7zm0 9.5A2.5 2.5 0 1112 6.5a2.5 2.5 0 010 5z" />
-            </svg>
-            <svg v-else-if="selectedMedal.icon === 'fire'" viewBox="0 0 24 24" fill="currentColor">
-              <path d="M13.5 2s4.5 4 4.5 8.5a6 6 0 01-12 0c0-2 1-3.5 1-3.5s2 2.5 3 2.5c0-3 3.5-7.5 3.5-7.5zM12 22a5 5 0 01-5-5c0-2 1-3.5 2.5-4.5.5 1.5 1.5 2.5 2.5 3 .5-2 1.5-3 2.5-3.5C16 12.5 17 14 17 16a5 5 0 01-5 6z" />
-            </svg>
-            <svg v-else-if="selectedMedal.icon === 'book'" viewBox="0 0 24 24" fill="currentColor">
-              <path d="M4 4h6a3 3 0 013 3v13a2 2 0 00-2-2H4V4zm16 0h-6a3 3 0 00-3 3v13a2 2 0 012-2h7V4z" />
-            </svg>
-            <svg v-else-if="selectedMedal.icon === 'flag'" viewBox="0 0 24 24" fill="currentColor">
-              <path d="M5 3h2v18H5V3zm2 3h12l-2 4 2 4H7V6z" />
-            </svg>
-            <svg v-else viewBox="0 0 24 24" fill="currentColor">
-              <path d="M17 9V7a5 5 0 00-10 0v2H5v13h14V9h-2zm-8-2a3 3 0 016 0v2H9V7z" />
-            </svg>
-          </div>
+          <MedalBadge
+            class="pf-medal-card__badge"
+            :icon="selectedMedal.icon"
+            :earned="selectedMedal.earned"
+            :color="medalColor(selectedMedal)"
+            :size="92"
+          />
 
           <h3 class="pf-medal-card__name">{{ selectedMedal.name }}</h3>
           <span
@@ -1192,6 +1197,7 @@ async function onLogout() {
   }
 
   // ===== 勋章 =====
+  // 与订单/足迹一致：直接在卡片底色上排布，不再叠加一层"展柜底"
   &__medal-list {
     display: grid;
     grid-template-columns: repeat(4, 1fr);
@@ -1207,34 +1213,21 @@ async function onLogout() {
     cursor: pointer;
     -webkit-tap-highlight-color: transparent;
 
-    &:active .profile__medal-icon {
-      transform: scale(0.92);
+    &:active :deep(.medal-badge__disc) {
+      transform: scale(0.94);
     }
   }
 
-  &__medal-icon {
-    transition: transform 0.15s;
-    width: 48px;
-    height: 48px;
-    border-radius: 50%;
-    background: @color-bg-page;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-
-    svg {
-      width: 26px;
-      height: 26px;
-    }
-
-    &.is-locked {
-      background: #f0f0f2;
-    }
+  // 已点亮勋章的名字加重，未点亮保持灰色，形成主次
+  &__medal.is-earned &__medal-name {
+    color: @color-text-primary;
+    font-weight: 600;
   }
 
   &__medal-name {
     font-size: @font-size-sm;
     color: @color-text-secondary;
+    text-align: center;
   }
 
   // ===== 订单 =====
@@ -1374,6 +1367,80 @@ async function onLogout() {
   // ===== 足迹 =====
   &__footprint {
     margin-top: @spacing-sm;
+  }
+
+  &__footprint-total {
+    font-size: @font-size-sm;
+    font-weight: 400;
+    color: @color-text-secondary;
+  }
+
+  // 日期选择：横向可滑动，选中主色实底
+  &__footprint-dates {
+    display: flex;
+    gap: @spacing-sm;
+    margin: 0 @spacing-md @spacing-md;
+    padding-bottom: 2px;
+    overflow-x: auto;
+    scrollbar-width: none;
+
+    &::-webkit-scrollbar {
+      display: none;
+    }
+  }
+
+  &__footprint-date {
+    flex: 0 0 auto;
+    padding: 6px 14px;
+    border: 1px solid @color-border;
+    border-radius: 16px;
+    background: @color-bg-card;
+    font-size: @font-size-sm;
+    color: @color-text-regular;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+
+    &:active {
+      border-color: fade(@color-primary, 40%);
+      color: @color-primary;
+    }
+
+    &.is-active {
+      border-color: @color-primary;
+      background: @color-primary;
+      color: #fff;
+      font-weight: 600;
+    }
+  }
+
+  &__footprint-day-label {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin: 0 @spacing-md @spacing-sm;
+    font-size: @font-size-sm;
+    font-weight: 600;
+    color: @color-text-secondary;
+
+    &::before {
+      content: '';
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: @color-primary;
+      opacity: 0.55;
+    }
+  }
+
+  &__footprint-empty {
+    margin: 0 @spacing-md @spacing-md;
+    padding: @spacing-lg 0;
+    border-radius: @radius-lg;
+    background: @color-bg-card;
+    box-shadow: @shadow-card;
+    text-align: center;
+    font-size: @font-size-sm;
+    color: @color-text-secondary;
   }
 
   &__footprint-card {
@@ -2310,20 +2377,8 @@ async function onLogout() {
       0 0 0 1px rgba(0, 0, 0, 0.06);
   }
 
-  &__icon {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 76px;
-    height: 76px;
-    margin: 0 auto @spacing-sm;
-    border-radius: 50%;
-    background: @color-bg-page;
-
-    svg {
-      width: 38px;
-      height: 38px;
-    }
+  &__badge {
+    margin-bottom: @spacing-sm;
   }
 
   &__name {

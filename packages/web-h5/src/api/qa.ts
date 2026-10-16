@@ -8,6 +8,7 @@
  */
 import request from './request'
 import { DEFAULT_SCENIC_AREA_ID } from './scenic'
+import { AI_REQUEST_TIMEOUT_MS, SHORT_REQUEST_TIMEOUT_MS } from './timeouts'
 
 /** 问答接口返回结构（字段与后端 AskResult 一致） */
 export interface AskResult {
@@ -45,16 +46,17 @@ export function askAi(params: {
       ...params,
       scenicAreaId: params.scenicAreaId ?? DEFAULT_SCENIC_AREA_ID,
     },
-    // LLM 生成耗时较长，放宽单次请求超时
-    { timeout: 60000 },
+    // 与后端 ai-engine.read-timeout-ms（300s）对齐并留 30s 缓冲，取值见 ./timeouts.ts
+    { timeout: AI_REQUEST_TIMEOUT_MS },
   )
 }
+
 
 /** 语音转文字：上传录音文件（multipart/form-data，字段名须为后端 SttController 约定的 audio），返回识别文本 */
 export function speechToText(file: Blob, filename = 'recording.webm'): Promise<SttResult> {
   const form = new FormData()
   form.append('audio', file, filename)
-  return request.post('/stt', form, { timeout: 30000 })
+  return request.post('/stt', form, { timeout: SHORT_REQUEST_TIMEOUT_MS })
 }
 
 /** 获取推荐问题列表；silent=true 时请求失败不弹全局错误提示（用于后台轮询） */
@@ -75,7 +77,7 @@ export async function getRecommendations(
 /** 将后端返回的音频地址解析为可播放地址（相对路径拼接后端 origin，dev 下 /audio 不在 5173 上） */
 export function resolveTtsUrl(url: string): string {
   if (/^https?:\/\//i.test(url)) return url
-  const origin = new URL(import.meta.env.VITE_API_BASE_URL).origin
+  const origin = new URL(import.meta.env.VITE_API_BASE_URL, window.location.origin).origin
   return `${origin}${url.startsWith('/') ? '' : '/'}${url}`
 }
 

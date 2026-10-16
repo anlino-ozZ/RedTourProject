@@ -39,8 +39,26 @@ const typing = ref(false)
 const toastText = ref('')
 const sessionId = ref('')
 
-/** 推荐问题：接口获取，失败沿用本地推荐 */
-const suggestQuestions = ref<string[]>(RECOMMEND_QUESTIONS)
+/** 推荐问题池：接口获取，失败沿用本地推荐 */
+const suggestPool = ref<string[]>(RECOMMEND_QUESTIONS)
+/** 每屏展示的推荐问题条数（4~5 条，避免首屏过长） */
+const SUGGEST_PAGE_SIZE = 5
+/** 当前屏在问题池中的起始下标，"换一批"时整屏轮转 */
+const suggestOffset = ref(0)
+
+/** 当前屏推荐问题：从问题池轮转取 5 条，池内不足则全量展示 */
+const suggestQuestions = computed(() => {
+  const pool = suggestPool.value
+  if (pool.length <= SUGGEST_PAGE_SIZE) return pool
+  const start = suggestOffset.value % pool.length
+  return [...pool.slice(start), ...pool.slice(0, start)].slice(0, SUGGEST_PAGE_SIZE)
+})
+
+/** 换一批：整屏轮转，保证与上一屏不重复 */
+function refreshSuggest() {
+  playTapSound()
+  suggestOffset.value = (suggestOffset.value + SUGGEST_PAGE_SIZE) % suggestPool.value.length
+}
 
 // ===== TTS 播放 / 语音提问（STT）状态 =====
 let audioEl: HTMLAudioElement | null = null
@@ -310,10 +328,13 @@ onMounted(() => {
     ask(q.trim(), true)
   }
 
-  // 推荐问题：后端获取，失败静默沿用本地推荐
+  // 推荐问题：后端获取（池化后每屏展示 5 条），失败静默沿用本地推荐
   getRecommendations(DEFAULT_SCENIC_AREA_ID, { silent: true })
     .then((list) => {
-      if (Array.isArray(list) && list.length > 0) suggestQuestions.value = list
+      if (Array.isArray(list) && list.length > 0) {
+        suggestPool.value = list
+        suggestOffset.value = 0
+      }
     })
     .catch(() => {})
 
@@ -404,7 +425,23 @@ onUnmounted(() => {
 
       <!-- 推荐问题（首轮对话前） -->
       <div v-if="showSuggest" class="qa-suggest">
-        <p class="qa-suggest__label">你可以问我</p>
+        <div class="qa-suggest__head">
+          <p class="qa-suggest__label">你可以问我</p>
+          <button type="button" class="qa-suggest__refresh" @click="refreshSuggest">
+            <svg
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            >
+              <path d="M20 11a8 8 0 10-2.6 5.9" />
+              <path d="M20 5v5h-5" />
+            </svg>
+            换一批
+          </button>
+        </div>
         <div class="qa-suggest__list">
           <button
             v-for="q in suggestQuestions"
@@ -662,10 +699,38 @@ onUnmounted(() => {
 .qa-suggest {
   margin-top: -@spacing-sm;
 
+  &__head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin: 0 0 @spacing-sm;
+  }
   &__label {
-    margin: 0 0 @spacing-sm 2px;
+    margin: 0 0 0 2px;
     font-size: @font-size-sm;
     color: @color-text-secondary;
+  }
+  &__refresh {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 4px 10px;
+    border: none;
+    border-radius: 12px;
+    background: @color-primary-light;
+    font-size: @font-size-sm;
+    color: @color-primary;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+
+    svg {
+      width: 13px;
+      height: 13px;
+    }
+
+    &:active {
+      background: fade(@color-primary, 16%);
+    }
   }
   &__list {
     display: flex;
