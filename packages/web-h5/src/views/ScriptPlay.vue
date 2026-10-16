@@ -18,6 +18,7 @@ import {
 } from '@/utils/sound'
 import { addPoints } from '@/utils/levelStorage'
 import { unlockBadge } from '@/utils/achievementStorage'
+import { POSE_ACTION_LABEL } from '@/api/pose'
 import { usePoseCamera } from '@/composables/usePoseCamera'
 
 const router = useRouter()
@@ -152,6 +153,7 @@ const {
   cameraError: poseCameraError,
   recognizeError: poseRecognizeError,
   keypoints: poseKeypoints,
+  lastAction: poseLastAction,
   scanning: poseScanning,
   startCamera: startPoseCamera,
   stopCamera: stopPoseCamera,
@@ -245,16 +247,26 @@ function drawPoseSkeleton() {
 
 watch(poseKeypoints, () => drawPoseSkeleton())
 watch(poseCameraOn, () => nextTick(drawPoseSkeleton))
+
+/** 最近一次识别出的动作中文名：用于在预览上反馈"实际识别成了什么" */
+const poseActionLabel = computed(() => POSE_ACTION_LABEL[poseLastAction.value] ?? '')
 /** 连续识别失败次数：用于逐级给出更具体的引导 */
 const poseFailCount = ref(0)
 /** 各动作的关键要领（对应 ai-engine 判定规则：敬礼看手腕是否到耳边，挥手看手腕是否高过肩，推磨看双手高度与间距） */
 const POSE_ACTION_GUIDE: Record<string, string[]> = {
   军礼: ['一只手抬到耳边、手掌贴向耳侧', '手要举过肩膀，手肘抬起来别夹太紧'],
-  挥手: ['抬起一只手，手腕要高过肩膀', '手掌朝向镜头，左右摆动'],
+  挥手: [
+    '整条手臂举高，手腕要高出肩膀一大截（差不多到头顶的高度）',
+    '手要放在身体侧前方摆动，离头远一点：贴到头边会被判成「敬礼」',
+  ],
   推磨: ['双手放在腰腹高度、两只手基本齐平', '双手间距大约一个肩膀宽'],
 }
 /** 通用要点：任务动作没有专属要领时使用 */
-const POSE_GUIDE_FALLBACK = ['上半身完整入镜（能看到肩膀和腰）', '正对镜头，动作保持 1 秒再点识别']
+const POSE_GUIDE_FALLBACK = [
+  '上半身完整入镜（能看到肩膀和腰）',
+  '手和身体都留在画面里，别挥出镜头',
+  '正对镜头，动作放慢一点',
+]
 /** 当前动作的要领列表 */
 const poseGuide = computed(
   () => POSE_ACTION_GUIDE[currentTask.value?.action ?? ''] ?? POSE_GUIDE_FALLBACK,
@@ -529,6 +541,10 @@ onUnmounted(() => {
             <video ref="poseVideoRef" class="pose-cam__video" playsinline muted />
             <canvas ref="poseCanvasRef" class="pose-cam__skeleton" />
             <span class="pose-cam__badge">{{ currentTask.action }}</span>
+            <span class="pose-cam__detect" :class="{ 'is-ok': poseKeypoints.length === 17 }">
+              {{ poseKeypoints.length === 17 ? '已检测到人体' : '未检测到人体' }}
+              <template v-if="poseActionLabel"> · 识别到「{{ poseActionLabel }}」</template>
+            </span>
           </div>
           <button
             class="gesture-btn"
@@ -1074,6 +1090,23 @@ onUnmounted(() => {
     width: 100%;
     height: 100%;
     pointer-events: none;
+  }
+
+  &__detect {
+    position: absolute;
+    right: @spacing-sm;
+    bottom: @spacing-sm;
+    left: @spacing-sm;
+    padding: 2px 10px;
+    border-radius: @radius-sm;
+    background: rgba(0, 0, 0, 0.55);
+    color: rgba(255, 255, 255, 0.85);
+    font-size: @font-size-sm;
+    text-align: center;
+
+    &.is-ok {
+      color: #b7eb8f;
+    }
   }
 
   &__badge {

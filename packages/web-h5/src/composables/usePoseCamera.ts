@@ -19,6 +19,8 @@ export function usePoseCamera() {
   const recognizeError = ref('')
   /** 最近一次识别出的骨架关键点，供预览叠加绘制 */
   const keypoints = ref<NormalizedKeypoints>([])
+  /** 最近一次识别出的动作（salute / mill / wave / unknown），用于向用户反馈实际识别结果 */
+  const lastAction = ref('')
   /** 是否处于连续识别中 */
   const scanning = ref(false)
 
@@ -32,6 +34,7 @@ export function usePoseCamera() {
     mediaStream = null
     if (videoRef.value) videoRef.value.srcObject = null
     keypoints.value = []
+    lastAction.value = ''
     cameraOn.value = false
   }
 
@@ -93,10 +96,12 @@ export function usePoseCamera() {
     try {
       const res = await recognizePose(frame.data)
       keypoints.value = toNormalized(res.keypoints, frame.width, frame.height)
+      lastAction.value = res.action
       return res
     } catch {
       recognizeError.value = '识别失败，请确认后端服务已启动后重试'
       keypoints.value = []
+      lastAction.value = ''
       return null
     } finally {
       recognizing.value = false
@@ -141,6 +146,7 @@ export function usePoseCamera() {
     recognizing,
     recognizeError,
     keypoints,
+    lastAction,
     scanning,
     startCamera,
     stopCamera,
