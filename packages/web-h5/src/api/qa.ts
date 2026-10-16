@@ -32,6 +32,13 @@ export interface SttResult {
  */
 export { DEFAULT_SCENIC_AREA_ID }
 
+/**
+ * 单次问答超时（毫秒）
+ * 本地 Ollama 为 CPU 推理，单个问题约需 1~3 分钟，默认 15s 会先断开；
+ * 须不低于后端 ai-engine.read-timeout-ms（application.yml），否则后端还在推理时前端已超时。
+ */
+const ASK_TIMEOUT_MS = 300000
+
 /** 智能问答（useVoice=true 时后端生成 TTS，返回 audioUrl） */
 export function askAi(params: {
   question: string
@@ -45,10 +52,11 @@ export function askAi(params: {
       ...params,
       scenicAreaId: params.scenicAreaId ?? DEFAULT_SCENIC_AREA_ID,
     },
-    // LLM 生成耗时较长，放宽单次请求超时
-    { timeout: 60000 },
+    // 与后端 ai-engine.read-timeout-ms 对齐，避免前端比后端先超时
+    { timeout: ASK_TIMEOUT_MS },
   )
 }
+
 
 /** 语音转文字：上传录音文件（multipart/form-data，字段名须为后端 SttController 约定的 audio），返回识别文本 */
 export function speechToText(file: Blob, filename = 'recording.webm'): Promise<SttResult> {
