@@ -69,6 +69,11 @@ function onTask(task: InteractionTask) {
   }
 }
 
+/** 姿态互动：跳转 H5 单帧识别页（与触摸屏端共用后端 /pose/recognize 接口） */
+function onPose() {
+  router.push('/interactive/pose')
+}
+
 // ===== 徽章详情弹窗 =====
 const selectedBadge = ref<AchievementBadge | null>(null)
 
@@ -198,6 +203,32 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
             {{ task.actionText }}
           </button>
         </div>
+      </div>
+
+      <!-- ===== 姿态互动入口（AI 姿态识别：摄像头前做动作触发讲解） ===== -->
+      <div class="panel__section-head">
+        <h2 class="panel__section-title">AI 姿态互动</h2>
+        <span class="panel__section-more">敬礼 / 推磨 / 挥手</span>
+      </div>
+      <div class="pose-entry" role="button" tabindex="0" @click="onPose" @keyup.enter="onPose">
+        <div class="pose-entry__icon">
+          <svg
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          >
+            <circle cx="12" cy="8" r="3.5" />
+            <path d="M5 21v-3a7 7 0 0114 0v3" />
+          </svg>
+        </div>
+        <div class="pose-entry__info">
+          <div class="pose-entry__title">姿态识别互动</div>
+          <div class="pose-entry__desc">站到摄像头前做出动作，识别成功即播报关联讲解</div>
+        </div>
+        <span class="pose-entry__arrow">›</span>
       </div>
     </div>
 
@@ -536,6 +567,61 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
   display: flex;
   flex-direction: column;
   gap: @spacing-md;
+}
+
+.pose-entry {
+  display: flex;
+  align-items: center;
+  gap: @spacing-md;
+  padding: @spacing-md;
+  margin-bottom: @spacing-md;
+  border-radius: @radius-lg;
+  background: @color-bg-card;
+  box-shadow: @shadow-card;
+  cursor: pointer;
+
+  &:active {
+    transform: scale(0.99);
+  }
+
+  &__icon {
+    width: 44px;
+    height: 44px;
+    flex: 0 0 44px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+    background: @color-primary-light;
+    color: @color-primary;
+
+    svg {
+      width: 24px;
+      height: 24px;
+    }
+  }
+
+  &__info {
+    flex: 1;
+    min-width: 0;
+  }
+
+  &__title {
+    font-size: @font-size-base;
+    font-weight: 600;
+    color: @color-text-primary;
+  }
+
+  &__desc {
+    margin-top: @spacing-xs;
+    font-size: @font-size-sm;
+    color: @color-text-secondary;
+  }
+
+  &__arrow {
+    color: @color-text-secondary;
+    font-size: @font-size-lg;
+  }
 }
 
 .task-card {

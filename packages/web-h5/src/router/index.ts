@@ -74,6 +74,12 @@ const routes: RouteRecordRaw[] = [
     meta: { title: '', showTabBar: false },
   },
   {
+    path: '/interactive/pose',
+    name: 'interactive-pose',
+    component: () => import('@/views/PoseInteract.vue'),
+    meta: { title: '姿态互动', showTabBar: true },
+  },
+  {
     path: '/profile',
     name: 'profile',
     component: () => import('@/views/Profile.vue'),
