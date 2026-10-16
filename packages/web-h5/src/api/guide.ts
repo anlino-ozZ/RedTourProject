@@ -4,6 +4,7 @@
  */
 import request from './request'
 import { DEFAULT_SCENIC_AREA_ID } from './scenic'
+import { AI_REQUEST_TIMEOUT_MS } from './timeouts'
 
 /** 问答/讲解接口返回结构（字段与后端 AskResult 一致） */
 export interface AskResult {
@@ -27,10 +28,15 @@ export function askNarration(params: {
   question: string
   useVoice: boolean
 }): Promise<AskResult> {
-  return request.post('/ask', {
-    ...params,
-    scenicAreaId: DEFAULT_SCENIC_AREA_ID,
-  })
+  // 语音讲解同样复用 /ask（本地模型推理实测 110~215s），超时与 qa.ts 保持同一个来源
+  return request.post(
+    '/ask',
+    {
+      ...params,
+      scenicAreaId: DEFAULT_SCENIC_AREA_ID,
+    },
+    { timeout: AI_REQUEST_TIMEOUT_MS },
+  )
 }
 
 /** 将后端返回的音频地址解析为可播放地址（相对路径拼接后端 origin） */

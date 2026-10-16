@@ -8,6 +8,7 @@
 import type { PoseRecognizeResult, PoseTriggerContent } from '@red-tour-project/common'
 import request from './request'
 import { DEFAULT_SCENIC_AREA_ID } from './guide'
+import { POSE_RECOGNIZE_TIMEOUT_MS } from './timeouts'
 
 export type { PoseRecognizeResult, PoseTriggerContent }
 
@@ -29,7 +30,11 @@ export function recognizePose(
   scenicAreaId: number = DEFAULT_SCENIC_AREA_ID,
 ): Promise<PoseRecognizeResult> {
   // 首帧需要加载模型，推理耗时较长，放宽单次请求超时
-  return request.post('/pose/recognize', { frame, scenicAreaId }, { timeout: 60000 })
+  return request.post(
+    '/pose/recognize',
+    { frame, scenicAreaId },
+    { timeout: POSE_RECOGNIZE_TIMEOUT_MS },
+  )
 }
 
 /** 截取 video 当前帧并转成后端需要的 Base64（JPEG 压缩以控制体积） */

@@ -8,6 +8,7 @@
  */
 import request from './request'
 import { DEFAULT_SCENIC_AREA_ID } from './scenic'
+import { AI_REQUEST_TIMEOUT_MS, SHORT_REQUEST_TIMEOUT_MS } from './timeouts'
 
 /** 问答接口返回结构（字段与后端 AskResult 一致） */
 export interface AskResult {
@@ -32,13 +33,6 @@ export interface SttResult {
  */
 export { DEFAULT_SCENIC_AREA_ID }
 
-/**
- * 单次问答超时（毫秒）
- * 本地 Ollama 为 CPU 推理，单个问题约需 1~3 分钟，默认 15s 会先断开；
- * 须不低于后端 ai-engine.read-timeout-ms（application.yml），否则后端还在推理时前端已超时。
- */
-const ASK_TIMEOUT_MS = 300000
-
 /** 智能问答（useVoice=true 时后端生成 TTS，返回 audioUrl） */
 export function askAi(params: {
   question: string
@@ -52,8 +46,8 @@ export function askAi(params: {
       ...params,
       scenicAreaId: params.scenicAreaId ?? DEFAULT_SCENIC_AREA_ID,
     },
-    // 与后端 ai-engine.read-timeout-ms 对齐，避免前端比后端先超时
-    { timeout: ASK_TIMEOUT_MS },
+    // 与后端 ai-engine.read-timeout-ms（300s）对齐并留 30s 缓冲，取值见 ./timeouts.ts
+    { timeout: AI_REQUEST_TIMEOUT_MS },
   )
 }
 
@@ -62,7 +56,7 @@ export function askAi(params: {
 export function speechToText(file: Blob, filename = 'recording.webm'): Promise<SttResult> {
   const form = new FormData()
   form.append('audio', file, filename)
-  return request.post('/stt', form, { timeout: 30000 })
+  return request.post('/stt', form, { timeout: SHORT_REQUEST_TIMEOUT_MS })
 }
 
 /** 获取推荐问题列表；silent=true 时请求失败不弹全局错误提示（用于后台轮询） */
