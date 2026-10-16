@@ -76,12 +76,12 @@ withDefaults(
   width: var(--medal-size);
 
   &__ribbon {
-    width: calc(var(--medal-size) * 0.56);
-    height: calc(var(--medal-size) * 0.32);
+    width: calc(var(--medal-size) * 0.5);
+    height: calc(var(--medal-size) * 0.28);
     margin-bottom: calc(var(--medal-size) * -0.12);
     background:
-      linear-gradient(180deg, rgba(255, 255, 255, 0.34), rgba(0, 0, 0, 0.26)),
-      var(--medal-color);
+      linear-gradient(180deg, rgba(255, 255, 255, 0.24), rgba(0, 0, 0, 0.16)),
+      #c41e3a;
     clip-path: polygon(0 0, 100% 0, 100% 100%, 50% 68%, 0 100%);
   }
 
@@ -96,28 +96,28 @@ withDefaults(
     // 抛光金属外圈：斜向多段渐变模拟金属反光
     background: linear-gradient(
       150deg,
-      #fdf7de 0%,
-      #e8ca78 22%,
-      #b8860b 46%,
-      #f7e9b7 68%,
-      #a97c14 100%
+      #f4e6bd 0%,
+      #dcc27a 26%,
+      #bd9a45 50%,
+      #ecd9a6 70%,
+      #ab8637 100%
     );
     box-shadow:
-      0 2px 5px rgba(122, 88, 12, 0.26),
-      inset 0 0 0 1px rgba(255, 255, 255, 0.55);
+      0 1px 3px rgba(102, 74, 14, 0.18),
+      inset 0 0 0 1px rgba(255, 255, 255, 0.42);
     transition: transform 0.15s;
 
     // 珐琅内盘
     &::after {
       content: '';
       position: absolute;
-      inset: calc(var(--medal-size) * 0.08);
+      inset: calc(var(--medal-size) * 0.1);
       border-radius: 50%;
       background:
-        radial-gradient(circle at 32% 26%, rgba(255, 255, 255, 0.4), rgba(255, 255, 255, 0) 58%),
-        linear-gradient(160deg, rgba(255, 255, 255, 0.18), rgba(0, 0, 0, 0.18)),
+        radial-gradient(circle at 32% 26%, rgba(255, 255, 255, 0.26), rgba(255, 255, 255, 0) 56%),
+        linear-gradient(160deg, rgba(255, 255, 255, 0.14), rgba(0, 0, 0, 0.16)),
         var(--medal-color);
-      box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.28);
+      box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.22);
     }
   }
 
@@ -134,8 +134,8 @@ withDefaults(
   &.is-locked {
     .medal-badge__ribbon {
       background:
-        linear-gradient(180deg, rgba(255, 255, 255, 0.52), rgba(0, 0, 0, 0.08)),
-        #d5d5dd;
+        linear-gradient(180deg, rgba(255, 255, 255, 0.6), rgba(0, 0, 0, 0.05)),
+        #dedee4;
     }
 
     .medal-badge__disc {

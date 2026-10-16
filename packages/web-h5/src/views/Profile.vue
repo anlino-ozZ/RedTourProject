@@ -1197,18 +1197,12 @@ async function onLogout() {
   }
 
   // ===== 勋章 =====
-  // 展柜式排布：浅暖底 + 内高光，衬托金属圆盘
+  // 与订单/足迹一致：直接在卡片底色上排布，不再叠加一层"展柜底"
   &__medal-list {
     display: grid;
     grid-template-columns: repeat(4, 1fr);
     gap: @spacing-md @spacing-sm;
-    padding: @spacing-md @spacing-sm;
-    margin: 0 @spacing-md @spacing-md;
-    border-radius: @radius-lg;
-    background:
-      linear-gradient(180deg, rgba(196, 30, 58, 0.05), rgba(196, 30, 58, 0) 44%),
-      linear-gradient(180deg, #fdfbf8, #f6f1ea);
-    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.9);
+    padding: 0 @spacing-md @spacing-md;
   }
 
   &__medal {
