@@ -397,17 +397,37 @@ function toReward() {
   badgeIsNew.value = isNew
   if (isNew) shineTimer = setTimeout(() => playBadgeShineSound(), 900)
   // 撒花彩带（确定性伪随机，避免每次渲染位置跳动）
-  confetti.value = Array.from({ length: 28 }, (_, i) => ({
-    left: `${(i * 37) % 100}%`,
-    bg: CONFETTI_COLORS[i % CONFETTI_COLORS.length],
-    delay: `${((i * 13) % 10) / 10}s`,
-    dur: `${2.4 + ((i * 7) % 10) / 8}s`,
-  }))
+  // 粒子更多、大小不一、横向飘移不同，铺得更满更散
+  confetti.value = Array.from({ length: 80 }, (_, i) => {
+    const width = 6 + ((i * 11) % 8)
+    const height = width + ((i * 3) % 9)
+    return {
+      left: `${(i * 17 + 3) % 100}%`,
+      width: `${width}px`,
+      height: `${height}px`,
+      radius: i % 4 === 0 ? '999px' : '2px',
+      bg: CONFETTI_COLORS[i % CONFETTI_COLORS.length],
+      delay: `${((i * 7) % 18) / 10}s`,
+      dur: `${2.2 + ((i * 5) % 20) / 10}s`,
+      drift: `${(((i * 13) % 21) - 10) * 4}px`,
+    }
+  })
 }
 
 // ===== 通关奖励：解锁动画与撒花 =====
 const badgeIsNew = ref(false)
-const confetti = ref<Array<{ left: string; bg: string; delay: string; dur: string }>>([])
+const confetti = ref<
+  Array<{
+    left: string
+    width: string
+    height: string
+    radius: string
+    bg: string
+    delay: string
+    dur: string
+    drift: string
+  }>
+>([])
 const CONFETTI_COLORS = ['#c41e3a', '#d4af37', '#e8c96a', '#f5f0e6', '#e2703a', '#8f1d2c']
 let shineTimer: ReturnType<typeof setTimeout> | undefined
 
@@ -659,9 +679,13 @@ onUnmounted(() => {
           class="confetti__piece"
           :style="{
             left: c.left,
+            width: c.width,
+            height: c.height,
+            borderRadius: c.radius,
             background: c.bg,
             animationDelay: c.delay,
             animationDuration: c.dur,
+            '--drift': c.drift,
           }"
         />
       </div>
@@ -1346,9 +1370,11 @@ onUnmounted(() => {
 
   &__piece {
     position: absolute;
-    top: -14px;
+    top: -18px;
     width: 8px;
     height: 14px;
+    // 每片独立的横向飘移距离，由内联样式注入
+    --drift: 0px;
     border-radius: 2px;
     opacity: 0.95;
     animation: confetti-fall 3s ease-in forwards;
@@ -1357,12 +1383,12 @@ onUnmounted(() => {
 
 @keyframes confetti-fall {
   0% {
-    transform: translateY(-10vh) rotate(0deg);
+    transform: translate3d(0, -12vh, 0) rotate(0deg);
     opacity: 1;
   }
   100% {
-    transform: translateY(110vh) rotate(720deg);
-    opacity: 0.5;
+    transform: translate3d(var(--drift), 112vh, 0) rotate(900deg);
+    opacity: 0.55;
   }
 }
 
