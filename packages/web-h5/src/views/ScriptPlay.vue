@@ -18,6 +18,7 @@ import {
 } from '@/utils/sound'
 import { addPoints } from '@/utils/levelStorage'
 import { unlockBadge } from '@/utils/achievementStorage'
+import { usePoseCamera } from '@/composables/usePoseCamera'
 
 const router = useRouter()
 const route = useRoute()
@@ -137,6 +138,31 @@ function startScript() {
 // ===== 任务循环 =====
 // 动作任务
 const actionState = ref<'idle' | 'recognizing' | 'done'>('idle')
+/** 剧本动作名 → 后端动作码（ai-engine 目前仅识别 salute / mill / wave） */
+const SCRIPT_ACTION_TO_POSE: Record<string, string> = {
+  军礼: 'salute',
+  敬礼: 'salute',
+  挥手: 'wave',
+  推磨: 'mill',
+}
+/** 姿态识别：真实开启摄像头并调用 POST /pose/recognize */
+const {
+  videoRef: poseVideoRef,
+  cameraOn: poseCameraOn,
+  cameraError: poseCameraError,
+  recognizeError: poseRecognizeError,
+  startCamera: startPoseCamera,
+  stopCamera: stopPoseCamera,
+  recognizeOnce: recognizePoseOnce,
+} = usePoseCamera()
+/** 动作任务操作提示 */
+const poseTip = computed(() => {
+  const target = currentTask.value?.action ?? '动作'
+  if (actionState.value === 'done') return '识别成功！'
+  if (actionState.value === 'recognizing') return '姿势识别中，请保持动作…'
+  if (!poseCameraOn.value) return `点击按钮开启摄像头，面向屏幕做「${target}」`
+  return `对准镜头做出「${target}」，再点按钮识别`
+})
 // 问答任务
 const quizPicked = ref(-1)
 const quizWrong = ref(false)
@@ -165,6 +191,7 @@ function completeTask(scoreDelaySec = 0) {
   setTimeout(() => {
     // 重置本任务状态
     actionState.value = 'idle'
+    closePoseCamera()
     quizPicked.value = -1
     quizWrong.value = false
     quizCorrect.value = false
@@ -179,14 +206,36 @@ function completeTask(scoreDelaySec = 0) {
   }, 1000)
 }
 
-/** 动作任务：模拟姿势识别（识别中 1.2s → 成功） */
-function doAction() {
-  if (actionState.value !== 'idle') return
+/** 动作任务：开启摄像头 → 截帧调用 /pose/recognize → 命中目标动作才算通过 */
+async function doAction() {
+  if (actionState.value === 'done' || actionState.value === 'recognizing') return
+  playTapSound()
+  if (!poseCameraOn.value) {
+    // 首次点击先拉起摄像头预览，用户对准后再点一次完成识别
+    await startPoseCamera()
+    return
+  }
+  const target = currentTask.value?.action ?? ''
+  const expected = SCRIPT_ACTION_TO_POSE[target] ?? ''
   actionState.value = 'recognizing'
-  setTimeout(() => {
+  const res = await recognizePoseOnce()
+  if (!res) {
+    actionState.value = 'idle'
+    return
+  }
+  if (!expected || res.action === expected) {
     actionState.value = 'done'
     completeTask()
-  }, 1200)
+    return
+  }
+  actionState.value = 'idle'
+  playWrongSound()
+  showToast(`没有识别到「${target}」，请面向屏幕再做一次`)
+}
+
+/** 动作任务结束或切换任务时关闭摄像头，避免指示灯长亮 */
+function closePoseCamera() {
+  stopPoseCamera()
 }
 
 /** 问答任务：答错 → 提示重试 + 引导帮助；答对 → 过 */
@@ -371,13 +420,17 @@ onUnmounted(() => {
       </div>
       <p class="task-head__hint">{{ currentTask.hint }}</p>
 
-      <!-- 动作任务 -->
+      <!-- 动作任务：真实调用摄像头 + POST /pose/recognize -->
       <div v-if="currentTask.type === 'action'" class="task-body task-body--action">
         <div class="gesture-wrap">
+          <div v-if="poseCameraOn" class="pose-cam">
+            <video ref="poseVideoRef" class="pose-cam__video" playsinline muted />
+            <span class="pose-cam__badge">{{ currentTask.action }}</span>
+          </div>
           <button
             class="gesture-btn"
             :class="{ 'is-done': actionState === 'done', 'is-busy': actionState === 'recognizing' }"
-            aria-label="行军礼"
+            :aria-label="currentTask.action"
             @click="doAction"
           >
             <svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -385,11 +438,9 @@ onUnmounted(() => {
               <path d="M18 8a2 2 0 114 0v6a8 8 0 01-8 8h-2c-2.8 0-4.5-.86-5.99-2.34l-3.6-3.6a2 2 0 012.83-2.82L7 15" />
             </svg>
           </button>
-          <span class="gesture-wrap__tip">
-            {{ actionState === 'idle' && '点击按钮，面向屏幕行一个军礼'
-              || actionState === 'recognizing' && '姿势识别中…'
-              || '识别成功！' }}
-          </span>
+          <span class="gesture-wrap__tip">{{ poseTip }}</span>
+          <p v-if="poseCameraError" class="pose-cam__error">{{ poseCameraError }}</p>
+          <p v-if="poseRecognizeError" class="pose-cam__error">{{ poseRecognizeError }}</p>
         </div>
       </div>
 
@@ -880,6 +931,44 @@ onUnmounted(() => {
     justify-content: center;
     padding-top: 6vh;
   }
+}
+
+// 动作任务：摄像头预览
+.pose-cam {
+  position: relative;
+  width: 60vw;
+  max-width: 240px;
+  aspect-ratio: 3 / 4;
+  overflow: hidden;
+  border: 2px solid rgba(255, 255, 255, 0.3);
+  border-radius: @radius-lg;
+  background: #000;
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.45);
+
+  &__video {
+    display: block;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    // 前置摄像头镜像，符合照镜子的直觉
+    transform: scaleX(-1);
+  }
+
+  &__badge {
+    position: absolute;
+    top: @spacing-sm;
+    left: @spacing-sm;
+    padding: 2px 10px;
+    border-radius: 999px;
+    background: rgba(196, 30, 58, 0.85);
+    color: #fff;
+    font-size: @font-size-sm;
+  }
+}
+
+.pose-cam__error {
+  font-size: @font-size-sm;
+  color: @color-danger;
 }
 
 // 动作任务：手势按钮

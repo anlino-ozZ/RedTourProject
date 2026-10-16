@@ -227,8 +227,8 @@ export const mockScripts: Script[] = [
       {
         type: 'action',
         title: '动作任务：致谢老乡',
-        hint: '面向屏幕，向收留你的老人深深鞠躬致谢',
-        action: '鞠躬',
+        hint: '面向屏幕，向收留你的老人挥手致意',
+        action: '挥手',
         points: 10,
       },
       {
