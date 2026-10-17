@@ -6,6 +6,13 @@ import { useRoute, useRouter } from 'vue-router'
 import { RedButton } from '@red-tour-project/common'
 import { getRoutes, type GuideRoute } from '@/api/routes'
 import { getSpots, type GuideSpot } from '@/api/spots'
+import {
+  DEFAULT_SCENIC_AREA_ID,
+  getScenicAreaById,
+  getScenicAreas,
+  type ScenicAreaInfo,
+  type ScenicDataSource,
+} from '@/api/scenic'
 import GuideIcon from '@/components/GuideIcon.vue'
 
 const route = useRoute()
@@ -29,6 +36,22 @@ getSpots().then((list) => {
   }
 })
 getRoutes().then((list) => (routes.value = list))
+
+/** 当前景区（公开接口）：列表接口选出当前景区，详情接口补齐详情字段 */
+const scenicArea = ref<ScenicAreaInfo | null>(null)
+/** 景区数据来源：后端未上线时为 fallback（本地兜底） */
+const scenicSource = ref<ScenicDataSource>('fallback')
+getScenicAreas().then(async ({ list, source }) => {
+  const current = list.find((area) => area.id === DEFAULT_SCENIC_AREA_ID) ?? list[0]
+  if (!current) return
+  scenicArea.value = current
+  scenicSource.value = source
+  const detail = await getScenicAreaById(current.id)
+  if (detail.area) {
+    scenicArea.value = detail.area
+    scenicSource.value = detail.source
+  }
+})
 
 const selectedSpotId = ref<number>(Number(route.query.spotId) || 0)
 
@@ -54,6 +77,13 @@ const selectedRoute = computed(() => {
 })
 const hottestRouteId = computed(
   () => [...routes.value].sort((a, b) => b.visitCount - a.visitCount)[0]?.id,
+)
+
+/** 地图标题：后端景区接口可用时展示后端景区名，未上线时保持原有文案 */
+const mapChipText = computed(() =>
+  scenicSource.value === 'api' && scenicArea.value
+    ? `${scenicArea.value.name} · 景区示意图`
+    : '井冈山革命根据地 · 景区示意图',
 )
 
 function stars(difficulty: number): string {
@@ -107,7 +137,7 @@ function goRecommend() {
         <span class="guide__map-road guide__map-road--1"></span>
         <span class="guide__map-road guide__map-road--2"></span>
         <span class="guide__map-lake"></span>
-        <span class="guide__map-chip">井冈山革命根据地 · 景区示意图</span>
+        <span class="guide__map-chip">{{ mapChipText }}</span>
         <span class="guide__map-me">
           <span class="guide__map-me-dot"></span>
           <span class="guide__map-me-label">我的位置</span>
