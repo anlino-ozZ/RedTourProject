@@ -1,7 +1,10 @@
 package com.redtour.business.initializer;
 
+import com.redtour.business.dto.LoginRequest;
+import com.redtour.business.dto.LoginResult;
 import com.redtour.business.entity.SysUser;
 import com.redtour.business.mapper.UserMapper;
+import com.redtour.business.service.AuthService;
 import com.redtour.business.service.impl.AuthServiceImpl;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -20,6 +23,7 @@ import org.springframework.stereotype.Component;
 public class DataInitializer implements CommandLineRunner {
 
     private final UserMapper userMapper;
+    private final AuthService authService;
 
     @Override
     public void run(String... args) {
@@ -61,6 +65,21 @@ public class DataInitializer implements CommandLineRunner {
             tourist.setDeleted(0);
             userMapper.insert(tourist);
             log.info("[初始化] 创建游客账号 test_tourist / 123456 成功");
+        }
+
+        // 4. 启动登录自检：确认默认账号可正常登录并拿到 JWT
+        try {
+            LoginRequest probe = new LoginRequest();
+            probe.setUsername("admin");
+            probe.setPassword("admin123");
+            LoginResult result = authService.login(probe);
+            if (result != null && result.getToken() != null) {
+                log.info("[初始化] 登录验证通过，默认 admin / admin123 可登录 /api/v1/auth/login 拿到 JWT");
+            } else {
+                log.warn("[初始化] 登录自检未返回 token，请检查 authService.login 实现");
+            }
+        } catch (Exception e) {
+            log.warn("[初始化] 登录自检失败（不影响启动）：{}", e.getMessage());
         }
     }
 }

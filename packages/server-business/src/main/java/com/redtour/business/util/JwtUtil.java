@@ -10,6 +10,7 @@ import org.springframework.stereotype.Component;
 import javax.crypto.SecretKey;
 import java.nio.charset.StandardCharsets;
 import java.util.Date;
+import java.util.UUID;
 
 /**
  * JWT 工具类（基于 jjwt 0.12.x API）
@@ -47,6 +48,7 @@ public class JwtUtil {
                 .claim("username", user.getUsername())
                 .claim("role", user.getRole())
                 .claim("scenicAreaId", user.getScenicAreaId())
+                .claim("jti", UUID.randomUUID().toString())
                 .issuedAt(new Date(now))
                 .expiration(new Date(now + expMillis))
                 .signWith(getKey())

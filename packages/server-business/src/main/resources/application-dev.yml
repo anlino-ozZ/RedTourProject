@@ -4,10 +4,10 @@ mysql:
   port: 3306
   database: red_tour
   username: root
-  password: root
+  password: Yangyijia12138
 
 redis:
-  host: localhost
+  host: 192.168.248.137
   port: 6379
   database: 0
 
