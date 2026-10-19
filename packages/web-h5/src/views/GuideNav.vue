@@ -16,6 +16,7 @@ import {
   playBadgeShineSound,
 } from '@/utils/sound'
 import { askNarration, resolveAudioUrl } from '@/api/guide'
+import { checkinRouteSpot, isCheckinOutOfRange } from '@/api/checkin'
 import { getRoutes, type GuideRoute } from '@/api/routes'
 import { getSpots, type GuideSpot } from '@/api/spots'
 import { speak, stopSpeak } from '@/utils/narrator'
@@ -28,16 +29,32 @@ import {
 } from '@/utils/profileStorage'
 import { useGeolocation } from '@/composables/useGeolocation'
 import { buildMapProjection, haversineMeters, projectGeoPoint } from '@/utils/geo'
+import {
+  getGuideCheckins,
+  markGuideCheckinSynced,
+  saveGuideCheckin,
+} from '@/utils/guideCheckinStorage'
 
 const route = useRoute()
 const router = useRouter()
+const routeId = Number(route.query.routeId) || 1
+/** 与后端打卡点默认半径保持一致（docs/05 checkpoint.radius 默认 50 米） */
+const CHECKIN_RADIUS_METERS = 50
 
 /** 路线列表 */
 const routes = ref<GuideRoute[]>([])
 /** 景点列表 */
 const spots = ref<GuideSpot[]>([])
-getRoutes().then(({ list }) => (routes.value = list))
-getSpots().then(({ list }) => (spots.value = list))
+const guideDataReady = ref(false)
+const checkinHydrated = ref(false)
+const pendingSpotIds = ref<Set<number>>(new Set())
+Promise.all([getRoutes(), getSpots()]).then(([routeResult, spotResult]) => {
+  routes.value = routeResult.list
+  spots.value = spotResult.list
+  guideDataReady.value = true
+  hydrateCheckins()
+  void syncPendingCheckins()
+})
 
 // ===== 真实 GPS 定位 =====
 const {
@@ -63,7 +80,6 @@ const gpsMapPos = computed(() => {
   return projectGeoPoint(gpsPosition.value, mapProjection.value)
 })
 
-const routeId = Number(route.query.routeId) || 1
 const currentRoute = computed<GuideRoute | undefined>(
   () => routes.value.find((r) => r.id === routeId) ?? routes.value[0],
 )
@@ -85,6 +101,8 @@ const progress = ref(0)
 const navigating = ref(false)
 /** 当前选中景点的打卡状态 */
 const stampMap = ref<Record<number, boolean>>({})
+/** 正在请求打卡的景点，避免 GPS 连续回调重复提交 */
+const checkingSpotId = ref<number | null>(null)
 /** GPS 触发的讲解弹窗 */
 const lectureVisible = ref(false)
 
@@ -134,16 +152,20 @@ function startTicker() {
     if (!navigating.value) return
     progress.value += 0.015
     if (progress.value >= 1) {
-      progress.value = 0
-      // 到达当前景点：打卡 + 弹出讲解 + 到达提示音
-      stampMap.value[currentSpot.value!.id] = true
-      // 景点打卡积分落库（等级体系）
-      addPoints(5)
-      lectureVisible.value = true
-      playScoreSound()
+      progress.value = 1
+      // 没有 GPS 时只演示路线进度，不能伪造真实到达记录
+      if (currentSpot.value && !stampMap.value[currentSpot.value.id]) {
+        ElMessage.info('演示导航已到站，请授权定位后点击打卡')
+      }
       stopTicker()
     }
   }, 300)
+}
+function selectSpot(index: number) {
+  if (index < 0 || index >= routeSpots.value.length) return
+  currentIndex.value = index
+  progress.value = 0
+  if (navigating.value && !gpsPosition.value) startTicker()
 }
 function nextStop() {
   lectureVisible.value = false
@@ -165,7 +187,7 @@ const allStamped = computed(
     routeSpots.value.every((s) => stampMap.value[s.id]),
 )
 watch(allStamped, (all) => {
-  if (!all || celebrated.value) return
+  if (!all || celebrated.value || !checkinHydrated.value) return
   celebrated.value = true
   // 稍作停顿让用户读完到达提示，再收起讲解弹窗、弹出庆祝
   window.setTimeout(() => {
@@ -201,6 +223,7 @@ const confetti = Array.from({ length: 72 }, (_, i) => {
 onBeforeUnmount(() => {
   stopTicker()
   stopNarration()
+  window.removeEventListener('online', handleOnline)
 })
 
 // ===== 模式切换 =====
@@ -318,18 +341,187 @@ const minutesText = computed(() => {
   return `${Math.max(1, Math.ceil(realDistanceMeters.value / speed))} 分钟`
 })
 
-/** GPS 到达判定：进入目标景点 40 米内自动打卡并弹出讲解 */
+const currentCheckinPending = computed(() => {
+  const spot = currentSpot.value
+  return !!spot && pendingSpotIds.value.has(spot.id)
+})
+
+const checkinButtonText = computed(() => {
+  const spot = currentSpot.value
+  if (!spot) return '暂无景点'
+  if (stampMap.value[spot.id]) return currentCheckinPending.value ? '待同步' : '已打卡'
+  if (checkingSpotId.value === spot.id) return '打卡中…'
+  if (geoStatus.value === 'locating') return '定位中…'
+  if (!gpsPosition.value) return '定位后打卡'
+  if (realDistanceMeters.value == null) return '确认位置中…'
+  if (realDistanceMeters.value > CHECKIN_RADIUS_METERS) {
+    return `距 ${Math.ceil(realDistanceMeters.value)} 米`
+  }
+  return '到达打卡'
+})
+
+function hydrateCheckins() {
+  const state = getGuideCheckins(routeId)
+  stampMap.value = Object.fromEntries(
+    state.checkedSpotIds.map((spotId) => [spotId, true]),
+  )
+  pendingSpotIds.value = new Set(state.pending.map((item) => item.spotId))
+  const firstUnchecked = routeSpots.value.findIndex((spot) => !stampMap.value[spot.id])
+  currentIndex.value =
+    firstUnchecked >= 0 ? firstUnchecked : Math.max(0, routeSpots.value.length - 1)
+  progress.value = 0
+  checkinHydrated.value = true
+  // 恢复已完成路线时不再自动弹庆祝层，用户可点“路线完成”主动查看
+  if (allStamped.value) celebrated.value = true
+}
+
+let syncingPending = false
+/** 联网/重新进入页面时，按打卡时保存的经纬度补传离线记录 */
+async function syncPendingCheckins() {
+  if (
+    syncingPending ||
+    !guideDataReady.value ||
+    !localStorage.getItem('rt_token')
+  ) {
+    return
+  }
+  const pending = getGuideCheckins(routeId).pending
+  if (!pending.length) return
+
+  syncingPending = true
+  let syncedCount = 0
+  try {
+    for (const record of pending) {
+      try {
+        const result = await checkinRouteSpot(routeId, {
+          spotId: record.spotId,
+          longitude: record.longitude,
+          latitude: record.latitude,
+        })
+        if (!result.checked) continue
+        markGuideCheckinSynced(routeId, record.spotId)
+        pendingSpotIds.value.delete(record.spotId)
+        syncedCount += 1
+      } catch (error) {
+        // 超出范围说明该记录无法补传；其它异常（断网、后端未上线）等下次再试
+        if (isCheckinOutOfRange(error)) continue
+        break
+      }
+    }
+  } finally {
+    syncingPending = false
+  }
+  if (syncedCount > 0) {
+    ElMessage.success(`已同步 ${syncedCount} 条离线打卡记录`)
+  }
+}
+
+function handleOnline() {
+  void syncPendingCheckins()
+}
+window.addEventListener('online', handleOnline)
+
+/**
+ * 提交当前景点打卡：
+ * - 有登录态且后端可用：在线打卡
+ * - 断网 / 后端未上线：落本地并标记待同步
+ * - 后端明确返回 400：说明不在打卡范围，不写成功状态
+ */
+async function checkinCurrentSpot(source: 'manual' | 'auto' = 'manual') {
+  const spot = currentSpot.value
+  if (!spot || checkingSpotId.value != null || stampMap.value[spot.id]) return
+
+  const position = gpsPosition.value
+  if (!position) {
+    if (source === 'manual') {
+      ElMessage.warning('请先允许浏览器定位，定位成功后才能打卡')
+      locateMe()
+    }
+    return
+  }
+  const distance = realDistanceMeters.value
+  if (distance == null) {
+    if (source === 'manual') ElMessage.warning('正在确认当前位置，请稍后再试')
+    return
+  }
+  if (distance > CHECKIN_RADIUS_METERS) {
+    if (source === 'manual') {
+      ElMessage.warning(
+        `距离景点约 ${Math.ceil(distance)} 米，进入 ${CHECKIN_RADIUS_METERS} 米范围后才能打卡`,
+      )
+    }
+    return
+  }
+
+  checkingSpotId.value = spot.id
+  const requestBody = {
+    spotId: spot.id,
+    longitude: position.longitude,
+    latitude: position.latitude,
+  }
+  let synced = false
+  let progressText = ''
+  const hasSession = !!localStorage.getItem('rt_token')
+
+  try {
+    if (hasSession) {
+      try {
+        const result = await checkinRouteSpot(routeId, requestBody)
+        if (!result.checked) {
+          if (source === 'manual') ElMessage.warning('打卡未生效，请靠近景点后重试')
+          return
+        }
+        progressText = result.progress
+        synced = true
+      } catch (error) {
+        if (isCheckinOutOfRange(error)) {
+          if (source === 'manual') {
+            ElMessage.warning('后端校验未通过：当前不在打卡范围内')
+          }
+          return
+        }
+        // 网络异常 / 后端接口未上线：继续走离线兜底
+      }
+    }
+
+    saveGuideCheckin(routeId, spot.id, requestBody, !synced)
+    if (synced) {
+      pendingSpotIds.value.delete(spot.id)
+    } else {
+      pendingSpotIds.value.add(spot.id)
+    }
+
+    const isNewCheckin = !stampMap.value[spot.id]
+    stampMap.value[spot.id] = true
+    if (isNewCheckin) addPoints(5)
+    progress.value = 1
+    lectureVisible.value = true
+    playScoreSound()
+    stopTicker()
+
+    if (source === 'manual') {
+      if (synced) {
+        ElMessage.success(progressText ? `打卡成功 · 路线进度 ${progressText}` : '打卡成功')
+      } else {
+        ElMessage.warning(
+          hasSession
+            ? '打卡服务暂不可用，已保存到本地，联网后自动同步'
+            : '当前未登录，打卡已保存到本地，登录后自动同步',
+        )
+      }
+    }
+  } finally {
+    checkingSpotId.value = null
+  }
+}
+
+/** GPS 到达判定：进入目标景点 50 米内自动打卡并弹出讲解 */
 function checkGpsArrival() {
   const spot = currentSpot.value
   if (!navigating.value || !spot || realDistanceMeters.value == null) return
   if (stampMap.value[spot.id]) return
-  if (realDistanceMeters.value > 40) return
-  progress.value = 1
-  stampMap.value[spot.id] = true
-  addPoints(5)
-  lectureVisible.value = true
-  playScoreSound()
-  stopTicker()
+  if (realDistanceMeters.value > CHECKIN_RADIUS_METERS) return
+  void checkinCurrentSpot('auto')
 }
 
 watch([realDistanceMeters, navigating], () => {
@@ -394,7 +586,7 @@ const pathD = computed(() => {
           'is-current': i === currentIndex && navigating,
         }"
         :style="{ left: `${sp.x}%`, top: `${sp.y}%` }"
-        @click="currentIndex = i; progress = 0"
+        @click="selectSpot(i)"
       >
         <span class="guide-nav__pin-label">
           {{ i + 1 }}.{{ sp.name }}
@@ -422,6 +614,32 @@ const pathD = computed(() => {
     <p v-if="geoStatus === 'fail'" class="guide-nav__geo-tip">
       {{ geoError }}
     </p>
+
+    <!-- 景点顺序卡片：快速查看全路线与打卡状态 -->
+    <div class="guide-nav__spot-strip" role="list" aria-label="路线景点顺序">
+      <button
+        v-for="(sp, i) in routeSpots"
+        :key="sp.id"
+        type="button"
+        class="guide-nav__spot-card"
+        :class="{
+          'is-current': i === currentIndex,
+          'is-done': !!stampMap[sp.id],
+          'is-pending': pendingSpotIds.has(sp.id),
+        }"
+        role="listitem"
+        @click="selectSpot(i)"
+      >
+        <span class="guide-nav__spot-index">{{ i + 1 }}</span>
+        <span class="guide-nav__spot-copy">
+          <strong>{{ sp.name }}</strong>
+          <small v-if="pendingSpotIds.has(sp.id)">待同步</small>
+          <small v-else-if="stampMap[sp.id]">已打卡</small>
+          <small v-else-if="i === currentIndex">当前景点</small>
+          <small v-else>待游览</small>
+        </span>
+      </button>
+    </div>
 
     <!-- 路线进度条 -->
     <div class="guide-nav__progress">
@@ -472,7 +690,7 @@ const pathD = computed(() => {
       </div>
     </div>
 
-    <!-- 打卡印章 + 语音讲解 + 下个景点（横向三栏卡片） -->
+    <!-- 打卡印章 + 下个景点（横向两栏卡片） -->
     <div class="guide-nav__toolbar">
       <div class="guide-nav__tool">
         <div class="guide-nav__tool-top">
@@ -486,26 +704,18 @@ const pathD = computed(() => {
         </div>
         <button
           class="guide-nav__tool-sub"
-          :class="{ 'is-done': stampMap[currentSpot?.id ?? -1] }"
-          @click="
-            currentSpot && (stampMap[currentSpot.id] = !stampMap[currentSpot.id])
-          "
+          :class="{
+            'is-done': stampMap[currentSpot?.id ?? -1],
+            'is-pending': currentCheckinPending,
+            'is-ready':
+              !stampMap[currentSpot?.id ?? -1] &&
+              realDistanceMeters != null &&
+              realDistanceMeters <= CHECKIN_RADIUS_METERS,
+          }"
+          :disabled="!!stampMap[currentSpot?.id ?? -1] || checkingSpotId != null"
+          @click="checkinCurrentSpot('manual')"
         >
-          {{ stampMap[currentSpot?.id ?? -1] ? '已解锁' : '点击打卡' }}
-        </button>
-      </div>
-
-      <div class="guide-nav__tool">
-        <div class="guide-nav__tool-top">
-          <GuideIcon class="guide-nav__tool-icon" name="headphones" :size="16" />
-          <span class="guide-nav__tool-title">语音讲解</span>
-        </div>
-        <button
-          class="guide-nav__tool-sub"
-          :class="{ 'is-playing': playing }"
-          @click="toggleAudio"
-        >
-          {{ narrLoading ? '生成中...' : playing ? '播放中...' : '点击播放' }}
+          {{ checkinButtonText }}
         </button>
       </div>
 
@@ -532,7 +742,7 @@ const pathD = computed(() => {
     </button>
 
     <!-- 路线完成按钮 -->
-    <div v-if="remainingCount === 0" class="guide-nav__bottom">
+    <div v-if="remainingCount === 0 && allStamped" class="guide-nav__bottom">
       <button
         class="guide-nav__finish"
         @click="celebrateVisible = true"
@@ -580,7 +790,8 @@ const pathD = computed(() => {
             </button>
           </div>
           <p class="lecture__tip">
-            <GuideIcon name="check-circle" :size="13" /> 您已自动打卡成功 · 继续前进将前往
+            <GuideIcon name="check-circle" :size="13" />
+            {{ currentCheckinPending ? '打卡记录已离线保存' : '您已完成打卡' }} · 继续前进将前往
             <strong>{{ nextSpot?.name ?? '终点' }}</strong>
           </p>
         </div>
@@ -826,6 +1037,101 @@ const pathD = computed(() => {
     word-break: break-word;
   }
 
+  // 景点顺序卡片
+  &__spot-strip {
+    display: flex;
+    gap: 8px;
+    overflow-x: auto;
+    padding: 2px 2px 8px;
+    margin-bottom: @spacing-sm;
+    scrollbar-width: none;
+    -webkit-overflow-scrolling: touch;
+
+    &::-webkit-scrollbar {
+      display: none;
+    }
+  }
+  &__spot-card {
+    flex: 0 0 auto;
+    min-width: 132px;
+    max-width: 172px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 9px 11px;
+    border: 1px solid @color-border;
+    border-radius: @radius-base;
+    background: @color-bg-card;
+    color: @color-text-regular;
+    text-align: left;
+    cursor: pointer;
+    transition: border-color 0.2s, background 0.2s, transform 0.2s;
+
+    &:active {
+      transform: scale(0.98);
+    }
+    &.is-current {
+      border-color: @color-primary;
+      background: fade(@color-primary, 7%);
+      color: @color-primary;
+    }
+    &.is-done {
+      border-color: fade(#52c41a, 45%);
+      background: fade(#52c41a, 7%);
+      color: #389e0d;
+    }
+    &.is-pending {
+      border-color: fade(#d48806, 45%);
+      background: #fffbe6;
+      color: #ad6800;
+    }
+  }
+  &__spot-index {
+    flex: 0 0 22px;
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background: fade(@color-primary, 10%);
+    color: @color-primary;
+    font-size: 11px;
+    font-weight: 700;
+
+    .is-done & {
+      background: #52c41a;
+      color: #fff;
+    }
+    .is-pending & {
+      background: #faad14;
+      color: #fff;
+    }
+  }
+  &__spot-copy {
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+
+    strong {
+      font-size: 12px;
+      font-weight: 600;
+      line-height: 1.25;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    small {
+      font-size: 10px;
+      color: @color-text-secondary;
+
+      .is-current & { color: @color-primary; }
+      .is-done & { color: #389e0d; }
+      .is-pending & { color: #ad6800; }
+    }
+  }
+
   // 进度条
   &__progress {
     display: flex;
@@ -909,7 +1215,7 @@ const pathD = computed(() => {
     vertical-align: 1px;
   }
 
-  // 操作区：横向三栏卡片（打卡印章 / 语音讲解 / 下个景点）
+  // 操作区：横向两栏卡片（打卡印章 / 下个景点）
   &__toolbar {
     display: flex;
     background: @color-bg-card;
@@ -966,7 +1272,18 @@ const pathD = computed(() => {
     gap: 3px;
 
     &.is-done { color: #52c41a; }
+    &.is-ready {
+      color: @color-primary;
+      font-weight: 700;
+    }
+    &.is-pending {
+      color: #ad6800;
+    }
     &.is-playing { color: @color-primary; }
+    &:disabled {
+      cursor: default;
+      opacity: 0.88;
+    }
     &--muted { color: @color-text-secondary; cursor: default; }
   }
 
