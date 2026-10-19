@@ -5,6 +5,8 @@ import { computed, ref } from 'vue'
 import { RedButton, RedDialog } from '@red-tour-project/common'
 import { getProducts, submitOrder as submitProductOrder, type Product, type ProductCategory } from '@/api/products'
 import { playCorrectSound, playWrongSound } from '@/utils/sound'
+import { applyCoverFallback } from '@/utils/imageFallback'
+import { saveStoredOrder } from '@/utils/orderStorage'
 
 type CategoryFilter = 'all' | ProductCategory
 
@@ -20,7 +22,7 @@ const activeCategory = ref<CategoryFilter>('all')
 const selected = ref<Product | null>(null)
 /** 商品列表 */
 const products = ref<Product[]>([])
-getProducts().then((list) => (products.value = list))
+getProducts().then(({ list }) => (products.value = list))
 
 const filteredProducts = computed(() =>
   activeCategory.value === 'all'
@@ -142,13 +144,23 @@ async function submitOrder() {
     return
   }
   if (!selected.value) return
+  const product = selected.value
   submitting.value = true
   try {
-    orderResult.value = await submitProductOrder({
-      productId: selected.value.id,
+    const result = await submitProductOrder({
+      productId: product.id,
       phone: phone.value.trim(),
       quantity: quantity.value,
       remark: remark.value || undefined,
+    })
+    orderResult.value = result
+    saveStoredOrder({
+      orderId: result.orderId,
+      title: product.name,
+      price: product.price,
+      quantity: quantity.value,
+      image: product.image,
+      createdAt: result.createdAt,
     })
     // 登记成功：上行琶音正反馈
     playCorrectSound()
@@ -194,6 +206,7 @@ async function submitOrder() {
               class="products__card-img"
               :src="item.image"
               :alt="item.name"
+              @error="applyCoverFallback"
               loading="lazy"
             />
             <span v-if="item.tag" class="products__card-badge">{{
@@ -246,6 +259,7 @@ async function submitOrder() {
             class="products-detail__carousel-img"
             :src="carouselImages()[activeImageIndex]"
             :alt="selected.name"
+            @error="applyCoverFallback"
           />
           <button
             type="button"

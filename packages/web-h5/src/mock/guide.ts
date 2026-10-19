@@ -9,6 +9,8 @@
  */
 
 /** 兴趣标签（与景点/路线关联） */
+import { haversineMeters } from '@/utils/geo'
+
 export type InterestTag = '历史' | '人物' | '战役' | '文物'
 
 /** 体力等级 */
@@ -26,6 +28,10 @@ export interface GuideSpot {
   audioLen?: number
   /** 景点兴趣标签（用于偏好匹配） */
   interests?: InterestTag[]
+  /** 真实纬度（后端景点接口返回；本地 mock 可能为空） */
+  latitude?: number
+  /** 真实经度（后端景点接口返回；本地 mock 可能为空） */
+  longitude?: number
   /** 模拟地图横坐标（百分比 0~100） */
   x: number
   /** 模拟地图纵坐标（百分比 0~100） */
@@ -166,7 +172,7 @@ export const routes: GuideRoute[] = [
 /** 推荐出发点：手动选择景点 / 实时定位（无地图坐标，仅作标记） */
 export type RecommendOrigin =
   | { type: 'spot'; spotId: number }
-  | { type: 'geo' }
+  | { type: 'geo'; latitude?: number; longitude?: number }
 
 /** 模拟地图坐标 → 公里的换算系数（整幅地图约 7km 跨度，与路线 distance 量级一致） */
 const KM_PER_UNIT = 0.07
@@ -178,16 +184,28 @@ export function recommendRoutes(params: {
   duration: number // 可用时长（分钟）
   /** 出发位置（可选）：手动选景点时按坐标重算距离分 */
   origin?: RecommendOrigin
+  /** 参与评分的路线（默认本文件 mock，接入真实接口时由调用方传入） */
+  routes?: GuideRoute[]
+  /** 参与评分的景点（默认本文件 mock） */
+  spots?: GuideSpot[]
 }): (GuideRoute & { score: number; highlight: string })[] {
+  const routeList = params.routes ?? routes
+  const spotList = params.spots ?? spots
   const diffFromFitness: Record<FitnessLevel, number> = { easy: 1, standard: 2, deep: 3 }
   const targetDiff = diffFromFitness[params.fitness]
 
   // 出发景点（手动模式）：用于计算出发点到路线首景点的 mock 距离
   const origin = params.origin
   const originSpot =
-    origin?.type === 'spot' ? spots.find((s) => s.id === origin.spotId) : undefined
+    origin?.type === 'spot' ? spotList.find((s) => s.id === origin.spotId) : undefined
+  const originPoint =
+    origin?.type === 'geo' &&
+    Number.isFinite(origin.latitude) &&
+    Number.isFinite(origin.longitude)
+      ? { latitude: origin.latitude as number, longitude: origin.longitude as number }
+      : undefined
 
-  const scored = routes.map((r) => {
+  const scored = routeList.map((r) => {
     // 1) 兴趣匹配：选对一个 +8 分（满分 32）
     const interestScore = r.interests.filter((t) => params.interests.includes(t)).length * 8
     // 2) 体力匹配：难度差越小分越高（满分 20）
@@ -199,11 +217,16 @@ export function recommendRoutes(params: {
     // 4) 热度（满分 16）
     const hotScore = Math.min(16, Math.round(r.visitCount / 1000))
     // 5) 距离（满分 12，越近越高）：手动选了出发点时按首景点坐标重算
-    const firstSpot = spots.find((s) => s.id === r.spotIds[0])
+    const firstSpot = spotList.find((s) => s.id === r.spotIds[0])
     const km =
-      originSpot && firstSpot
-        ? Math.hypot(originSpot.x - firstSpot.x, originSpot.y - firstSpot.y) * KM_PER_UNIT
-        : r.distance
+      originPoint && firstSpot?.latitude != null && firstSpot?.longitude != null
+        ? haversineMeters(originPoint, {
+            latitude: firstSpot.latitude,
+            longitude: firstSpot.longitude,
+          }) / 1000
+        : originSpot && firstSpot
+          ? Math.hypot(originSpot.x - firstSpot.x, originSpot.y - firstSpot.y) * KM_PER_UNIT
+          : r.distance
     const distScore = Math.max(0, 12 - Math.round(km * 2))
 
     const score = interestScore + fitnessScore + timeScore + hotScore + distScore
@@ -215,7 +238,7 @@ export function recommendRoutes(params: {
     if (durDelta <= 15) highlights.push('★ 时长契合您的游览计划')
     if (r.visitCount >= 20000) highlights.push(`🔥 热门路线（${r.visitCount.toLocaleString()} 人游览）`)
     if (originSpot && firstSpot && distScore >= 9) highlights.push('★ 距离您的出发点最近')
-    if (params.origin?.type === 'geo') highlights.push('★ 已结合您的实时位置')
+    if (originPoint) highlights.push('★ 已结合您的实时位置')
     const highlight = highlights.length ? highlights.join(' · ') : '为您精选'
 
     return { ...r, score, highlight }

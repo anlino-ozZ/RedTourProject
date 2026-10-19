@@ -272,7 +272,3 @@ export const mockScripts: Script[] = [
 export function getScriptById(id?: string): Script | undefined {
   return mockScripts.find((s) => s.id === id && !s.locked)
 }
-
-export function getBadgeById(id: string): AchievementBadge | undefined {
-  return mockAchievements.find((b) => b.id === id)
-}

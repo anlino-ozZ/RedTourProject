@@ -42,7 +42,7 @@ export function askAi(params: {
   return request.post(
     '/ask',
     {
-      useVoice: true,
+      useVoice: false,
       ...params,
       scenicAreaId: params.scenicAreaId ?? DEFAULT_SCENIC_AREA_ID,
     },
@@ -81,12 +81,22 @@ export function resolveTtsUrl(url: string): string {
   return `${origin}${url.startsWith('/') ? '' : '/'}${url}`
 }
 
+/** 将来源路径转成文献标题：去掉目录、锚点和 .md 扩展名，避免直接展示文件名 */
+export function formatSourceLabel(value: string | undefined): string | undefined {
+  const raw = value?.trim()
+  if (!raw) return undefined
+  const withoutHash = raw.split('#')[0].trim()
+  const base = withoutHash.split(/[\\/]/).pop()?.trim() ?? withoutHash
+  const title = base.replace(/\.md$/i, '').trim()
+  return title || undefined
+}
+
 /** 从问答来源列表中提取第一条可展示的标题（兼容 string / {title} / {name} 等结构） */
 export function extractSourceTitle(sources: unknown[] | undefined): string | undefined {
   const first = sources?.[0]
   if (first == null) return undefined
-  if (typeof first === 'string') return first
+  if (typeof first === 'string') return formatSourceLabel(first)
   const obj = first as Record<string, unknown>
   const t = obj.title ?? obj.name ?? obj.source
-  return typeof t === 'string' ? t : undefined
+  return typeof t === 'string' ? formatSourceLabel(t) : undefined
 }

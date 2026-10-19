@@ -5,7 +5,7 @@
  * - AI 加权评分 → 生成 2-3 条推荐路线
  * - 选定后跳转到 /guide/navigate?routeId=xx
  */
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { RedButton } from '@red-tour-project/common'
 import { ElMessage } from 'element-plus'
@@ -20,6 +20,7 @@ import {
 import { getSpots, type GuideSpot } from '@/api/spots'
 import GuideIcon from '@/components/GuideIcon.vue'
 import { playCorrectSound, playScoreSound } from '@/utils/sound'
+import { useGeolocation } from '@/composables/useGeolocation'
 
 const router = useRouter()
 
@@ -38,11 +39,22 @@ const duration = ref<number>(90)
 // ===== 出发位置采集 =====
 type OriginMode = 'none' | 'geo' | 'manual'
 const originMode = ref<OriginMode>('none')
-const geoState = ref<'idle' | 'locating' | 'ok' | 'fail'>('idle')
+const {
+  position: gpsPosition,
+  status: geoStatus,
+  errorMessage: geoError,
+  start: locate,
+} = useGeolocation({ immediate: false })
 const originSpotId = ref<number | null>(null)
 
 const origin = computed<RecommendOrigin | undefined>(() => {
-  if (originMode.value === 'geo' && geoState.value === 'ok') return { type: 'geo' }
+  if (originMode.value === 'geo' && geoStatus.value === 'ok' && gpsPosition.value) {
+    return {
+      type: 'geo',
+      latitude: gpsPosition.value.latitude,
+      longitude: gpsPosition.value.longitude,
+    }
+  }
   if (originMode.value === 'manual' && originSpotId.value != null) {
     return { type: 'spot', spotId: originSpotId.value }
   }
@@ -52,33 +64,23 @@ const origin = computed<RecommendOrigin | undefined>(() => {
 const spots = ref<GuideSpot[]>([])
 /** 路线列表 */
 const routes = ref<GuideRoute[]>([])
-getSpots().then((list) => (spots.value = list))
-getRoutes().then((list) => (routes.value = list))
+getSpots().then(({ list }) => (spots.value = list))
+getRoutes().then(({ list }) => (routes.value = list))
 
 const originSpot = computed(() => spots.value.find((s) => s.id === originSpotId.value) ?? null)
 
-/** 实时定位：浏览器 geolocation，失败可手动选择降级 */
+/** 实时定位：失败时保留定位面板并展示具体原因，用户可切手动选择 */
 function useLocation() {
-  if (!('geolocation' in navigator)) {
-    geoState.value = 'fail'
-    ElMessage.warning('当前浏览器不支持定位，请手动选择出发景点')
-    originMode.value = 'manual'
-    return
-  }
-  geoState.value = 'locating'
-  navigator.geolocation.getCurrentPosition(
-    () => {
-      geoState.value = 'ok'
-      playScoreSound()
-    },
-    () => {
-      geoState.value = 'fail'
-      ElMessage.warning('定位失败，可手动选择出发景点')
-      originMode.value = 'manual'
-    },
-    { timeout: 8000 },
-  )
+  originMode.value = 'geo'
+  locate()
 }
+
+watch(geoStatus, (status) => {
+  if (status === 'ok') playScoreSound()
+  if (status === 'fail') {
+    ElMessage.warning(geoError.value || '定位失败，可手动选择出发景点')
+  }
+})
 
 function toggleInterest(tag: InterestTag) {
   const i = interests.value.indexOf(tag)
@@ -113,12 +115,15 @@ async function generate() {
   if (!canGenerate.value) return
   aiGenerating.value = true
   await new Promise((r) => setTimeout(r, 1200))
-  recommended.value = recommendRoutes({
-    interests: [...interests.value],
-    fitness: fitness.value,
-    duration: duration.value,
-    origin: origin.value ? { ...origin.value } : undefined,
-  })
+  recommended.value = recommendRoutes(
+    {
+      interests: [...interests.value],
+      fitness: fitness.value,
+      duration: duration.value,
+      origin: origin.value ? { ...origin.value } : undefined,
+    },
+    { routes: routes.value, spots: spots.value },
+  )
   aiGenerating.value = false
   aiReady.value = true
   // AI 路线生成完成：上行琶音正反馈（上下文已在点击"生成"时解锁）
@@ -202,16 +207,18 @@ function stars(difficulty: number): string {
           <button
             type="button"
             class="guide-rec__locate"
-            :class="{ 'is-ok': geoState === 'ok' }"
-            :disabled="geoState === 'locating'"
+            :class="{ 'is-ok': geoStatus === 'ok', 'is-fail': geoStatus === 'fail' }"
+            :disabled="geoStatus === 'locating'"
             @click="useLocation"
           >
-            <template v-if="geoState === 'locating'">定位中...</template>
-            <template v-else-if="geoState === 'ok'">✓ 已获取实时位置 · 点击重新定位</template>
+            <template v-if="geoStatus === 'locating'">定位中...</template>
+            <template v-else-if="geoStatus === 'ok'">
+              ✓ 已获取实时位置<template v-if="gpsPosition?.accuracy">（±{{ Math.round(gpsPosition.accuracy) }} 米）</template> · 点击重新定位
+            </template>
             <template v-else><GuideIcon name="navigation" :size="14" /> 使用我的实时定位</template>
           </button>
-          <p class="guide-rec__origin-tip">
-            将结合您的实时位置、景区热度与距离为您优化推荐
+          <p class="guide-rec__origin-tip" :class="{ 'is-error': geoStatus === 'fail' }">
+            {{ geoStatus === 'fail' ? geoError : '将结合您的实时位置、景区热度与距离为您优化推荐' }}
           </p>
         </div>
 
@@ -311,7 +318,7 @@ function stars(difficulty: number): string {
           约 {{ duration }} 分钟 · 兴趣：{{ interests.join(' / ') }} ·
           出发：{{
             originSpot?.name ??
-            (originMode === 'geo' && geoState === 'ok' ? '我的实时位置' : '景区默认位置')
+            (originMode === 'geo' && geoStatus === 'ok' ? '我的实时位置' : '景区默认位置')
           }}
         </p>
         <button class="guide-rec__edit" @click="backToPreference">重新选择偏好</button>
@@ -514,12 +521,21 @@ function stars(difficulty: number): string {
       background: fade(#52c41a, 8%);
       color: #389e0d;
     }
+    &.is-fail {
+      border-color: #e6a23c;
+      background: fade(#e6a23c, 8%);
+      color: #b26a00;
+    }
   }
   &__origin-tip {
     margin: @spacing-sm 0 0;
     font-size: @font-size-sm;
     color: @color-text-secondary;
     line-height: 1.5;
+
+    &.is-error {
+      color: #c45656;
+    }
   }
 
   // 体力等级

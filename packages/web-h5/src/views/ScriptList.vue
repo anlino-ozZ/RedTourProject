@@ -16,12 +16,16 @@ const unlockedMap = getUnlockedBadges()
 const scripts = ref<Script[]>([])
 /** 成就徽章列表（用于按 ID 查找名称） */
 const badges = ref<AchievementBadge[]>([])
-getScripts().then((list) => (scripts.value = list))
+getScripts().then(({ list }) => (scripts.value = list))
 getAchievements().then((list) => (badges.value = list))
 
 /** 是否已通关（奖励徽章已解锁即视为通关） */
 function isCleared(script: Script) {
-  return !!script.reward.badgeId && !!unlockedMap[script.reward.badgeId]
+  if (!script.reward.badgeId) return false
+  return (
+    !!unlockedMap[script.reward.badgeId] ||
+    !!badges.value.find((badge) => badge.id === script.reward.badgeId)?.earned
+  )
 }
 
 const playableCount = computed(() => scripts.value.filter((s) => !s.locked).length)

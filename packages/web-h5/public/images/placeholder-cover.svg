@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 600" role="img" aria-label="Red tourism cover placeholder">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#8f1424"/>
+      <stop offset="0.55" stop-color="#b92536"/>
+      <stop offset="1" stop-color="#6d0d19"/>
+    </linearGradient>
+  </defs>
+  <rect width="800" height="600" fill="url(#bg)"/>
+  <circle cx="620" cy="122" r="52" fill="#f3c15a" opacity="0.9"/>
+  <path d="M0 470 L150 330 L290 440 L420 300 L560 430 L700 350 L800 450 V600 H0 Z" fill="#5a0a14" opacity="0.55"/>
+  <path d="M0 520 L180 410 L330 500 L500 380 L650 480 L800 420 V600 H0 Z" fill="#3d0710" opacity="0.5"/>
+  <path d="M400 140 l14 34 36 3 -28 24 9 35 -31 -18 -31 18 9 -35 -28 -24 36 -3z" fill="#f6d27a" opacity="0.94"/>
+  <text x="400" y="548" text-anchor="middle" fill="#f8e3b0" font-family="Georgia,serif" font-size="34" letter-spacing="8" opacity="0.86">RED TOUR</text>
+</svg>

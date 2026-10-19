@@ -5,10 +5,19 @@ import {
   mockUser,
   mockMedals,
   mockFootprints,
-  mockOrders,
+  type FootprintItem,
   type MedalItem,
-  type OrderItem,
 } from '@/mock/profile'
+import { getRoutes, type GuideRoute } from '@/api/routes'
+import {
+  getMyAchievements,
+  getProfileOverview,
+  getVisitRecords,
+  type ProfileOverview,
+  type UserAchievement,
+  type VisitRecord,
+} from '@/api/profile'
+import { getStoredOrders, type StoredOrder } from '@/utils/orderStorage'
 import UserAvatar from '@/components/UserAvatar.vue'
 import MedalBadge from '@/components/MedalBadge.vue'
 import {
@@ -46,13 +55,14 @@ const settings = ref<AppSettings>(getSettings())
 // ===== 等级体系：积分驱动，进入页面时刷新 =====
 const levelInfo = ref<LevelInfo>(getLevelInfo())
 onMounted(async () => {
+  orders.value = getStoredOrders()
   levelInfo.value = getLevelInfo()
-  // 登录后把账号昵称回填到本地资料：仅当本地昵称仍是默认值时，避免覆盖用户自定义昵称
   if (!userStore.isLoggedIn) return
   const me = userStore.user ?? (await userStore.refreshMe())
   if (me?.nickname && profile.value.nickname === DEFAULT_PROFILE.nickname) {
     profile.value = saveProfile({ nickname: me.nickname })
   }
+  await loadBackendProfile()
 })
 
 // ===== 每日签到：每日首次 +10 积分，签到后展示当日革命先辈名言 =====
@@ -136,35 +146,51 @@ function closeCheckIn() {
   checkInModalVisible.value = false
 }
 
+interface FootprintGroup {
+  date: string
+  items: FootprintItem[]
+}
+
 /** 头部展示用户：等级由本地积分实时解析，昵称/签名/头像用本地资料覆盖 */
-const user = computed(() => ({
-  ...mockUser,
-  nickname: profile.value.nickname,
-  slogan: profile.value.slogan,
-  level: levelInfo.value.level,
-  levelName: levelInfo.value.levelName,
-}))
+const backendProfile = ref<ProfileOverview | null>(null)
+const medals = ref<MedalItem[]>(mockMedals)
+const footprintGroups = ref<FootprintGroup[]>(mockFootprints)
+const orders = ref<StoredOrder[]>(getStoredOrders())
 
-const medals = mockMedals
-const footprintGroups = mockFootprints
-const orders = ref(mockOrders)
+const user = computed(() => {
+  const overview = backendProfile.value
+  return {
+    ...mockUser,
+    nickname: profile.value.nickname,
+    slogan: profile.value.slogan,
+    level: levelInfo.value.level,
+    levelName: levelInfo.value.levelName,
+    medals: overview
+      ? { owned: overview.totalAchievements ?? 0, total: medals.value.length }
+      : mockUser.medals,
+    stats: overview
+      ? [
+          { label: '游览次数', value: overview.totalVisits ?? 0 },
+          { label: '成就数', value: overview.totalAchievements ?? 0 },
+          { label: '打卡数', value: overview.totalCheckins ?? 0 },
+        ]
+      : mockUser.stats,
+  }
+})
 
-const orderStatusColor: Record<OrderItem['status'], string> = {
+const orderStatusColor: Record<StoredOrder['status'], string> = {
   pending: '#faad14',
-  paid: '#2f7cf6',
-  shipped: '#fa8c16',
-  done: '#52c41a',
-  refund: '#8c8c8c',
+  contacted: '#2f7cf6',
+  closed: '#8c8c8c',
 }
 
 // 订单 Tab 筛选
-type OrderTab = 'all' | OrderItem['status']
+type OrderTab = 'all' | StoredOrder['status']
 const orderTabs: { key: OrderTab; label: string }[] = [
   { key: 'all', label: '全部' },
-  { key: 'pending', label: '待付款' },
-  { key: 'paid', label: '待发货' },
-  { key: 'shipped', label: '待收货' },
-  { key: 'done', label: '已完成' },
+  { key: 'pending', label: '待处理' },
+  { key: 'contacted', label: '已联系' },
+  { key: 'closed', label: '已关闭' },
 ]
 const activeTab = ref<OrderTab>('all')
 const filteredOrders = computed(() =>
@@ -182,12 +208,103 @@ const footprintDate = ref<string>(FOOTPRINT_ALL)
 /** 当前筛选出的足迹分组（选"全部"则按日期分组全展示） */
 const visibleFootprintGroups = computed(() =>
   footprintDate.value === FOOTPRINT_ALL
-    ? footprintGroups
-    : footprintGroups.filter((g) => g.date === footprintDate.value),
+    ? footprintGroups.value
+    : footprintGroups.value.filter((g) => g.date === footprintDate.value),
 )
 const footprintTotal = computed(() =>
-  footprintGroups.reduce((sum, g) => sum + g.items.length, 0),
+  footprintGroups.value.reduce((sum, g) => sum + g.items.length, 0),
 )
+
+function formatRecordDate(value?: string | null): string {
+  if (!value) return '未知日期'
+  const match = String(value).match(/^(\d{4})-(\d{2})-(\d{2})/)
+  return match ? `${match[1]}.${match[2]}.${match[3]}` : String(value).slice(0, 10)
+}
+
+function formatDuration(minutes?: number | null): string {
+  const total = Math.max(0, Math.round(minutes ?? 0))
+  if (total >= 60) {
+    const hours = Math.floor(total / 60)
+    const rest = total % 60
+    return rest ? `${hours}小时${rest}分钟` : `${hours}小时`
+  }
+  return `${total}分钟`
+}
+
+function toMedal(item: UserAchievement): MedalItem {
+  const known = mockMedals.find((medal) => medal.name === item.name)
+  return {
+    name: item.name || `成就 ${item.achievementId}`,
+    icon: known?.icon ?? 'star',
+    earned: true,
+    color: known?.color ?? '#d4af37',
+    desc: item.description || known?.desc,
+  }
+}
+
+function toMedals(achievements: UserAchievement[]): MedalItem[] {
+  const earned = achievements.map(toMedal)
+  const earnedNames = new Set(earned.map((medal) => medal.name))
+  const locked: MedalItem[] = mockMedals
+    .filter((medal) => !earnedNames.has(medal.name))
+    .map((medal) => ({ ...medal, earned: false, color: undefined }))
+  return [...earned, ...locked]
+}
+
+function toFootprintGroups(
+  records: VisitRecord[],
+  routes: GuideRoute[],
+): FootprintGroup[] {
+  const routeNames = new Map(routes.map((route) => [route.id, route.name]))
+  const groups = new Map<string, FootprintItem[]>()
+  for (const record of records) {
+    const date = formatRecordDate(record.createdAt)
+    const title = record.routeId
+      ? routeNames.get(record.routeId) ?? `路线 ${record.routeId}`
+      : '景区游览'
+    const spotCount = record.spotCount ?? 0
+    const duration = formatDuration(record.duration)
+    const item: FootprintItem = {
+      id: String(record.id),
+      title,
+      meta: `游览 ${spotCount} 个景点 · 停留 ${duration}`,
+      tags: [spotCount ? `游览 ${spotCount} 个景点` : '景区游览', `停留 ${duration}`],
+      actionTo: record.routeId ? `/guide/navigate?routeId=${record.routeId}` : undefined,
+      actionText: record.routeId ? '查看路线' : undefined,
+    }
+    const list = groups.get(date) ?? []
+    list.push(item)
+    groups.set(date, list)
+  }
+  return Array.from(groups.entries()).map(([date, items]) => ({ date, items }))
+}
+
+async function loadBackendProfile() {
+  if (!userStore.isLoggedIn) return
+  const [overview, achievements, records, routes] = await Promise.all([
+    getProfileOverview(),
+    getMyAchievements(),
+    getVisitRecords(1, 50),
+    getRoutes(),
+  ])
+  if (overview.source === 'api' && overview.data) {
+    const data = overview.data
+    backendProfile.value = data
+    if (data.nickname && profile.value.nickname === DEFAULT_PROFILE.nickname) {
+      profile.value = saveProfile({ nickname: data.nickname })
+    }
+    if (data.avatar && !profile.value.avatar) {
+      profile.value = saveProfile({ avatar: data.avatar })
+    }
+  }
+  if (achievements.source === 'api') {
+    medals.value = toMedals(achievements.list)
+  }
+  if (records.source === 'api') {
+    const routeList = routes.source === 'api' ? routes.list : []
+    footprintGroups.value = toFootprintGroups(records.list, routeList)
+  }
+}
 
 function selectFootprintDate(date: string) {
   if (footprintDate.value === date) return
@@ -535,7 +652,12 @@ async function onLogout() {
             </div>
           </div>
         </div>
-        <div v-else class="profile__order-empty">暂无相关订单</div>
+        <div v-else class="profile__order-empty">
+          <p>暂无订单</p>
+          <button type="button" class="profile__order-empty-btn" @click="router.push('/products')">
+            去文创中心看看
+          </button>
+        </div>
       </div>
     </section>
 
@@ -874,14 +996,14 @@ async function onLogout() {
             </div>
             <div class="pf-avatar-grid">
               <button
-                v-for="(p, i) in avatarPresets"
-                :key="i"
+                v-for="index in avatarPresets.length"
+                :key="index - 1"
                 type="button"
                 class="pf-avatar-cell"
-                :class="{ 'is-active': !profile.avatar && profile.presetIndex === i }"
-                @click="pickPreset(i)"
+                :class="{ 'is-active': !profile.avatar && profile.presetIndex === index - 1 }"
+                @click="pickPreset(index - 1)"
               >
-                <UserAvatar :profile="{ avatar: '', presetIndex: i }" :size="56" />
+                <UserAvatar :profile="{ avatar: '', presetIndex: index - 1 }" :size="56" />
               </button>
               <button
                 type="button"
@@ -1362,6 +1484,20 @@ async function onLogout() {
     color: @color-text-secondary;
     font-size: @font-size-sm;
     padding: @spacing-lg 0;
+
+    p {
+      margin: 0 0 @spacing-sm;
+    }
+  }
+
+  &__order-empty-btn {
+    border: 1px solid @color-primary;
+    color: @color-primary;
+    background: transparent;
+    border-radius: 999px;
+    padding: 6px 16px;
+    font-size: @font-size-sm;
+    cursor: pointer;
   }
 
   // ===== 足迹 =====

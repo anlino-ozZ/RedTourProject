@@ -4,6 +4,7 @@ import { onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { getSpots, type GuideSpot } from '@/api/spots'
 import { getRecommendations } from '@/api/qa'
+import { applyCoverFallback, hideBrokenImage } from '@/utils/imageFallback'
 
 const router = useRouter()
 
@@ -143,7 +144,9 @@ onBeforeUnmount(() => {
 
 // 热门景点（与导览地图共用数据源，保证点击后定位到同一景点）
 const hotSpots = ref<GuideSpot[]>([])
-getSpots().then((list) => (hotSpots.value = list))
+// 首页热门景点：与导览/推荐共用默认景区，保证景点 ID 和跳转定位一致
+getSpots()
+  .then(({ list }) => (hotSpots.value = list))
 
 /** 跳转到导览地图视图；传入 spotId 时地图自动定位到该景点 */
 function goToMap(spotId?: number) {
@@ -269,7 +272,7 @@ async function refreshHotQuestions() {
         :style="[{ background: slide.gradient }, slideStyle(i)]"
       >
         <!-- 实景照片 + 深色蒙层（保证文字可读） -->
-        <img class="home__banner-photo" :src="slide.image" :alt="slide.title" />
+        <img class="home__banner-photo" :src="slide.image" :alt="slide.title" @error="applyCoverFallback" />
         <span class="home__banner-scrim"></span>
 
         <div class="home__banner-inner">
@@ -336,6 +339,7 @@ async function refreshHotQuestions() {
               v-if="spot.image"
               :src="spot.image"
               :alt="spot.name"
+              @error="hideBrokenImage"
               loading="lazy"
             />
           </div>

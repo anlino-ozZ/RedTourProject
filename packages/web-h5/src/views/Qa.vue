@@ -10,6 +10,7 @@ import {
   DEFAULT_SCENIC_AREA_ID,
   askAi,
   extractSourceTitle,
+  formatSourceLabel,
   getRecommendations,
   resolveTtsUrl,
   speechToText,
@@ -109,6 +110,15 @@ function showToast(text: string) {
   toastTimer = setTimeout(() => (toastText.value = ''), 1800)
 }
 
+/** 去掉模型回答里的 Markdown 强调标记，避免气泡直接显示 ** 星号 */
+function formatAnswer(text: string): string {
+  return text
+    .replace(/\*\*([^*]+)\*\*/g, '$1')
+    .replace(/\*\*/g, '')
+    .replace(/(^|[^*])\*([^*\n]+)\*(?!\*)/g, '$1$2')
+    .replace(/__([^_]+)__/g, '$1')
+    .replace(/`([^`]+)`/g, '$1')
+}
 /** 保存当前会话（含欢迎语与全部消息） */
 function persist(firstQuestion?: string) {
   if (!sessionId.value) return
@@ -149,17 +159,17 @@ async function ask(raw?: string, silent = false) {
   let answerText = ''
   let audioUrl: string | null = null
   try {
-    const res = await askAi({ question: text, useVoice: true })
-    answerText = res.answer
+    const res = await askAi({ question: text, useVoice: false })
+    answerText = formatAnswer(res.answer || '').trim()
     audioUrl = res.audioUrl
     aiMsg.source = extractSourceTitle(res.sources)
   } catch {
     // 后端未启动 / 接口异常：拦截器已提示错误，此处降级本地知识
     const fallback = getAnswer(text)
-    answerText = fallback.content
+    answerText = formatAnswer(fallback.content || '').trim()
     aiMsg.source = fallback.source?.title
   }
-  if (!answerText) answerText = getAnswer(text).content
+  if (!answerText) answerText = formatAnswer(getAnswer(text).content || '').trim()
 
   let i = 0
   typeTimer = setInterval(() => {
@@ -395,7 +405,7 @@ onUnmounted(() => {
         <!-- 气泡 -->
         <div class="qa-bubble">
           <template v-if="m.content">
-            {{ m.content }}
+            {{ m.role === 'ai' ? formatAnswer(m.content) : m.content }}
             <span v-if="typing && idx === messages.length - 1" class="qa-bubble__caret" />
           </template>
           <span v-else-if="typing && idx === messages.length - 1" class="qa-dots">
@@ -404,7 +414,7 @@ onUnmounted(() => {
 
           <!-- 引用来源 -->
           <div v-if="m.source" class="qa-source">
-            <span class="qa-source__text">来源：{{ m.source }}</span>
+            <span class="qa-source__text">来源：{{ formatSourceLabel(m.source) }}</span>
             <svg class="qa-source__arrow" viewBox="0 0 24 24" fill="none"
               stroke="currentColor" stroke-width="2" stroke-linecap="round"
               stroke-linejoin="round" @click="showToast('正在打开来源文献…')">
