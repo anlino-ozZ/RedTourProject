@@ -1,0 +1,227 @@
+/**
+ * 智能导览 mock 数据（H-04/H-06 静态阶段，后续 H-07 替换为接口）
+ * - spots：景区内热门景点，x/y 为模拟地图上的百分比坐标
+ * - routes：导览路线，spotIds 关联该路线途经的景点；visitCount 为累计访问人数
+ * - tags：兴趣标签，用于偏好采集与路线加权评分
+ *
+ * 加权评分算法（mock 版本）：
+ *   score = 兴趣匹配分 + 体力匹配分 + 时长匹配分 + 热度分 + 距离分
+ */
+
+/** 兴趣标签（与景点/路线关联） */
+export type InterestTag = '历史' | '人物' | '战役' | '文物'
+
+/** 体力等级 */
+export type FitnessLevel = 'easy' | 'standard' | 'deep'
+
+/** 景点 */
+export interface GuideSpot {
+  id: number
+  name: string
+  tag: string
+  desc: string
+  /** 景点实景照片（首页热门景点等展示用） */
+  image?: string
+  /** 讲解音频时长（秒，mock） */
+  audioLen?: number
+  /** 景点兴趣标签（用于偏好匹配） */
+  interests?: InterestTag[]
+  /** 模拟地图横坐标（百分比 0~100） */
+  x: number
+  /** 模拟地图纵坐标（百分比 0~100） */
+  y: number
+}
+
+/** 导览路线 */
+export interface GuideRoute {
+  id: number
+  name: string
+  desc: string
+  /** 难度 1~3（对应星级；1=轻松 2=标准 3=深度） */
+  difficulty: number
+  /** 预计时长（分钟） */
+  duration: number
+  /** 景点数 */
+  spotCount: number
+  /** 距当前位置（公里，mock 定位） */
+  distance: number
+  tag: string
+  /** 累计访问人数（热度） */
+  visitCount: number
+  /** 途经景点 ID */
+  spotIds: number[]
+  /** 路线兴趣标签（用于偏好匹配加权） */
+  interests: InterestTag[]
+  /** 路线特色（AI 推荐后展示，如"★ 党史爱好者首选"） */
+  highlight?: string
+}
+
+/** 热门景点（井冈山革命根据地区域 mock） */
+export const spots: GuideSpot[] = [
+  {
+    id: 1,
+    name: '黄洋界',
+    tag: '战役遗址',
+    desc: '黄洋界保卫战发生地，扼守井冈山五大哨口之一，地势险要、云海壮阔。',
+    image:
+      'https://trae-api-cn.mchost.guru/api/ide/v1/text_to_image?prompt=realistic%20photo%20of%20Huangyangjie%20mountain%20pass%20in%20Jinggangshan%20China%2C%20misty%20sea%20of%20clouds%20over%20green%20mountain%20ridges%2C%20stone%20monument%20at%20historic%20red%20army%20battlefield%20site%2C%20morning%20light%2C%20landscape%20photography&image_size=landscape_4_3',
+    x: 22,
+    y: 26,
+    audioLen: 145,
+    interests: ['战役', '历史'],
+  },
+  {
+    id: 2,
+    name: '八角楼',
+    tag: '革命旧址',
+    desc: '毛泽东同志旧居，一盏清油灯下写下《中国的红色政权为什么能够存在？》。',
+    image:
+      'https://trae-api-cn.mchost.guru/api/ide/v1/text_to_image?prompt=realistic%20photo%20of%20Bajiao%20Lou%20octagonal%20window%20house%20in%20Maoping%20Jinggangshan%20China%2C%20traditional%20Chinese%20rural%20brick%20house%20with%20tiled%20roof%2C%20former%20residence%20courtyard%2C%20red%20tourism%20heritage%20site%2C%20daylight%20photography&image_size=landscape_4_3',
+    x: 58,
+    y: 38,
+    audioLen: 180,
+    interests: ['人物', '历史', '文物'],
+  },
+  {
+    id: 3,
+    name: '革命博物馆',
+    tag: '博物馆',
+    desc: '全面展示井冈山斗争史的国家级博物馆，馆藏文物三千余件。',
+    image:
+      'https://trae-api-cn.mchost.guru/api/ide/v1/text_to_image?prompt=realistic%20photo%20of%20Jinggangshan%20Revolutionary%20Museum%20exterior%2C%20grand%20modern%20museum%20building%20with%20red%20star%20emblem%2C%20wide%20stone%20stairs%20and%20plaza%2C%20blue%20sky%2C%20architectural%20photography&image_size=landscape_4_3',
+    x: 46,
+    y: 62,
+    audioLen: 210,
+    interests: ['历史', '文物', '战役'],
+  },
+  {
+    id: 4,
+    name: '烈士陵园',
+    tag: '纪念地',
+    desc: '瞻仰革命先烈的纪念圣地，碑林、纪念碑与雕塑群依山而建。',
+    image:
+      'https://trae-api-cn.mchost.guru/api/ide/v1/text_to_image?prompt=realistic%20photo%20of%20Jinggangshan%20revolutionary%20martyrs%20cemetery%2C%20solemn%20stone%20memorial%20monument%20surrounded%20by%20pine%20trees%2C%20stone%20steps%20on%20hillside%2C%20memorial%20park%2C%20daylight%20photography&image_size=landscape_4_3',
+    x: 74,
+    y: 70,
+    audioLen: 120,
+    interests: ['人物', '历史'],
+  },
+  {
+    id: 5,
+    name: '会师广场',
+    tag: '纪念碑',
+    desc: '朱毛两军胜利会师之地，高耸的会师纪念碑见证了红军的诞生。',
+    image:
+      'https://trae-api-cn.mchost.guru/api/ide/v1/text_to_image?prompt=realistic%20photo%20of%20Huishi%20Square%20in%20Jinggangshan%20China%2C%20tall%20red%20army%20joining%20forces%20memorial%20obelisk%20in%20open%20plaza%2C%20bronze%20sculptures%2C%20clear%20blue%20sky%2C%20daylight%20photography&image_size=landscape_4_3',
+    x: 30,
+    y: 76,
+    audioLen: 155,
+    interests: ['人物', '战役', '历史'],
+  },
+]
+
+/** 导览路线 */
+export const routes: GuideRoute[] = [
+  {
+    id: 1,
+    name: '初心之旅·经典打卡线',
+    desc: '黄洋界哨口、革命博物馆、会师广场，首次到访必走',
+    difficulty: 1,
+    duration: 60,
+    spotCount: 3,
+    distance: 3.2,
+    tag: '轻松',
+    visitCount: 28600,
+    spotIds: [1, 3, 5],
+    interests: ['历史', '战役'],
+  },
+  {
+    id: 2,
+    name: '烽火岁月·深度体验线',
+    desc: '八角楼、革命博物馆、烈士陵园，感受艰苦卓绝的斗争史',
+    difficulty: 2,
+    duration: 90,
+    spotCount: 3,
+    distance: 1.5,
+    tag: '推荐',
+    visitCount: 45200,
+    spotIds: [2, 3, 4],
+    interests: ['人物', '文物', '历史'],
+  },
+  {
+    id: 3,
+    name: '重上井冈·全程徒步线',
+    desc: '五大哨口全线徒步，适合体力充沛、时间充裕的游客',
+    difficulty: 3,
+    duration: 120,
+    spotCount: 5,
+    distance: 6.8,
+    tag: '挑战',
+    visitCount: 8900,
+    spotIds: [1, 2, 3, 4, 5],
+    interests: ['战役', '历史', '人物', '文物'],
+  },
+]
+
+/** 推荐出发点：手动选择景点 / 实时定位（无地图坐标，仅作标记） */
+export type RecommendOrigin =
+  | { type: 'spot'; spotId: number }
+  | { type: 'geo' }
+
+/** 模拟地图坐标 → 公里的换算系数（整幅地图约 7km 跨度，与路线 distance 量级一致） */
+const KM_PER_UNIT = 0.07
+
+/** AI 加权评分算法（mock）：根据偏好从 routes 中推荐 2-3 条 */
+export function recommendRoutes(params: {
+  interests: InterestTag[]
+  fitness: FitnessLevel
+  duration: number // 可用时长（分钟）
+  /** 出发位置（可选）：手动选景点时按坐标重算距离分 */
+  origin?: RecommendOrigin
+}): (GuideRoute & { score: number; highlight: string })[] {
+  const diffFromFitness: Record<FitnessLevel, number> = { easy: 1, standard: 2, deep: 3 }
+  const targetDiff = diffFromFitness[params.fitness]
+
+  // 出发景点（手动模式）：用于计算出发点到路线首景点的 mock 距离
+  const origin = params.origin
+  const originSpot =
+    origin?.type === 'spot' ? spots.find((s) => s.id === origin.spotId) : undefined
+
+  const scored = routes.map((r) => {
+    // 1) 兴趣匹配：选对一个 +8 分（满分 32）
+    const interestScore = r.interests.filter((t) => params.interests.includes(t)).length * 8
+    // 2) 体力匹配：难度差越小分越高（满分 20）
+    const diffDelta = Math.abs(r.difficulty - targetDiff)
+    const fitnessScore = Math.max(0, 20 - diffDelta * 8)
+    // 3) 时长匹配：差距越小分越高（满分 20）；超时长直接大扣分
+    const durDelta = Math.abs(r.duration - params.duration)
+    const timeScore = r.duration > params.duration + 15 ? -20 : Math.max(0, 20 - durDelta * 0.5)
+    // 4) 热度（满分 16）
+    const hotScore = Math.min(16, Math.round(r.visitCount / 1000))
+    // 5) 距离（满分 12，越近越高）：手动选了出发点时按首景点坐标重算
+    const firstSpot = spots.find((s) => s.id === r.spotIds[0])
+    const km =
+      originSpot && firstSpot
+        ? Math.hypot(originSpot.x - firstSpot.x, originSpot.y - firstSpot.y) * KM_PER_UNIT
+        : r.distance
+    const distScore = Math.max(0, 12 - Math.round(km * 2))
+
+    const score = interestScore + fitnessScore + timeScore + hotScore + distScore
+
+    // AI 生成特色文案
+    const highlights: string[] = []
+    if (interestScore >= 16) highlights.push('★ 高度匹配您的兴趣偏好')
+    if (diffDelta === 0) highlights.push('★ 难度匹配您的体力等级')
+    if (durDelta <= 15) highlights.push('★ 时长契合您的游览计划')
+    if (r.visitCount >= 20000) highlights.push(`🔥 热门路线（${r.visitCount.toLocaleString()} 人游览）`)
+    if (originSpot && firstSpot && distScore >= 9) highlights.push('★ 距离您的出发点最近')
+    if (params.origin?.type === 'geo') highlights.push('★ 已结合您的实时位置')
+    const highlight = highlights.length ? highlights.join(' · ') : '为您精选'
+
+    return { ...r, score, highlight }
+  })
+
+  // 降序取前 2~3 条
+  scored.sort((a, b) => b.score - a.score)
+  return scored.slice(0, params.duration >= 120 ? 3 : 2)
+}
