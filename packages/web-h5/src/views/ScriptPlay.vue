@@ -16,7 +16,7 @@ import {
   playTapSound,
   playWrongSound,
 } from '@/utils/sound'
-import { addPoints } from '@/utils/levelStorage'
+import { addPoints, getPoints } from '@/utils/levelStorage'
 import { unlockBadge } from '@/utils/achievementStorage'
 import { POSE_ACTION_LABEL } from '@/api/pose'
 import { usePoseCamera } from '@/composables/usePoseCamera'
@@ -31,12 +31,12 @@ const badges = ref<AchievementBadge[]>([])
 
 async function loadScript() {
   const id = route.query.scriptId as string
-  let s = await getScriptById(id)
-  if (!s) {
-    // 回退：取第一部可玩剧本
-    const { getScripts } = await import('@/api/scripts')
-    const all = await getScripts()
-    s = all.find((x) => !x.locked) ?? all[0]
+  const detail = await getScriptById(id)
+  let s = detail.script
+  // 后端节点式剧本（tasks 为空）暂不支持播放，回退到第一部可玩的任务式剧本
+  if (!s || !s.tasks.length) {
+    const { mockScripts } = await import('@/mock/interaction')
+    s = mockScripts.find((x) => !x.locked) ?? mockScripts[0]
   }
   script.value = s ?? null
 }
@@ -47,18 +47,26 @@ const rewardBadge = computed(() =>
   script.value ? badges.value.find((b) => b.id === script.value!.reward.badgeId) : undefined,
 )
 
-// 路由参数变化时重新加载剧本
-watch(() => route.query.scriptId, loadScript)
+// 路由参数变化时重新加载剧本，并重置上一局状态，保证重玩/换剧本能重新计分
+watch(() => route.query.scriptId, async () => {
+  await loadScript()
+  resetPlayState()
+})
 
 // ===== 流程状态机 =====
 type Stage = 'role' | 'intro' | 'tasks' | 'ending' | 'reward'
 const stage = ref<Stage>('role')
 const roleId = ref('')
-const role = computed(() => script.value?.roles.find((r) => r.id === roleId.value))
 
 const taskIndex = ref(0)
 const currentTask = computed(() => script.value?.tasks[taskIndex.value] as ScriptTask | undefined)
 const score = ref(0)
+/** 本局积分是否已结算，避免重复加分 */
+const pointsSettled = ref(false)
+/** 已结算的本局积分 */
+const settledPoints = ref(0)
+/** 结算后的累计总积分 */
+const totalPoints = ref(getPoints())
 const overallProgress = computed(() => {
   if (stage.value === 'role' || stage.value === 'intro') return 0
   if (stage.value === 'ending' || stage.value === 'reward') return 100
@@ -283,6 +291,15 @@ const flyPoints = ref('')
 
 // ===== 音效：统一使用 @/utils/sound 合成（无需音频素材）=====
 
+/** 结算本局积分：最后一个任务完成时立即落库，退出页面也不会丢分 */
+function settlePoints(notify = true) {
+  if (pointsSettled.value) return
+  pointsSettled.value = true
+  settledPoints.value = score.value
+  totalPoints.value = addPoints(score.value)
+  if (notify) showToast(`本局 +${score.value} 积分已到账`)
+}
+
 function flyup(points: number, soundDelaySec = 0) {
   score.value += points
   flyPoints.value = `+${points} 积分`
@@ -295,7 +312,14 @@ function completeTask(scoreDelaySec = 0) {
   const task = currentTask.value
   if (!task || !script.value) return
   flyup(task.points, scoreDelaySec)
-  showToast(`任务完成，剧情推进！`)
+  const isLastTask = taskIndex.value >= script.value.tasks.length - 1
+  // 最后一个任务完成即结算，用户此时直接退出也不会丢积分
+  if (isLastTask) settlePoints(false)
+  showToast(
+    isLastTask
+      ? `全部任务完成，本局 +${score.value} 积分已到账`
+      : '任务完成，剧情推进！',
+  )
   setTimeout(() => {
     // 重置本任务状态
     actionState.value = 'idle'
@@ -382,14 +406,39 @@ function doCheckin() {
   }, 1500)
 }
 
+// ===== 重玩 / 换剧本时重置本局状态 =====
+function resetPlayState() {
+  if (typeTimer) clearInterval(typeTimer)
+  typeTimer = undefined
+  displayedText.value = ''
+  isTyping.value = false
+  stage.value = 'role'
+  roleId.value = ''
+  taskIndex.value = 0
+  score.value = 0
+  pointsSettled.value = false
+  settledPoints.value = 0
+  totalPoints.value = getPoints()
+  flyPoints.value = ''
+  collected.value = false
+  badgeIsNew.value = false
+  actionState.value = 'idle'
+  quizPicked.value = -1
+  quizWrong.value = false
+  quizCorrect.value = false
+  showGuide.value = false
+  checkinState.value = 'idle'
+  closePoseCamera()
+}
+
 // ===== 结局 → 奖励 =====
 const collected = ref(false)
 
 function toReward() {
   if (isTyping.value) return
   stage.value = 'reward'
-  // 剧本通关：累计积分落库（等级体系），重玩重复通关也计分
-  addPoints(score.value)
+  // 剧本通关：最后一个任务完成时已结算；这里兜底一次，防止异常流程漏结算
+  settlePoints(false)
   // 徽章解锁号角
   playFanfareSound()
   // 写入解锁状态（互动中心徽章墙据此点亮）；仅首次解锁时错峰叠徽章闪耀音
@@ -670,6 +719,11 @@ onUnmounted(() => {
           点击一键展开 ▶
         </button>
       </div>
+      <div v-if="pointsSettled" class="ending-credit">
+        <span class="ending-credit__check">✓</span>
+        <span>本局 +{{ settledPoints }} 积分已到账</span>
+        <span class="ending-credit__total">总积分 {{ totalPoints }}</span>
+      </div>
       <button class="primary-btn" :disabled="isTyping" @click="toReward">查看通关奖励</button>
     </div>
 
@@ -708,8 +762,9 @@ onUnmounted(() => {
       </div>
       <div class="reward__score">
         <span>本局获得</span>
-        <strong>{{ score }} 积分</strong>
+        <strong>{{ settledPoints || score }} 积分</strong>
       </div>
+      <p class="reward__settled">已计入总积分 · 当前 {{ totalPoints }}</p>
       <div class="reward__actions">
         <button class="reward-btn" @click="onShare">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -895,6 +950,42 @@ onUnmounted(() => {
 
   &:active:not(:disabled) {
     transform: scale(0.98);
+  }
+}
+
+.ending-credit {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  width: 100%;
+  margin-top: @spacing-md;
+  padding: 10px @spacing-md;
+  border-radius: @radius-base;
+  border: 1px solid rgba(212, 175, 55, 0.35);
+  background: rgba(212, 175, 55, 0.12);
+  color: #f3d77a;
+  font-size: @font-size-sm;
+  font-weight: 600;
+
+  &__check {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    background: #52c41a;
+    color: #fff;
+    font-size: 10px;
+  }
+
+  &__total {
+    margin-left: 2px;
+    padding-left: 8px;
+    border-left: 1px solid rgba(243, 215, 122, 0.35);
+    color: rgba(255, 255, 255, 0.7);
+    font-weight: 400;
   }
 }
 
@@ -1499,6 +1590,13 @@ onUnmounted(() => {
       font-size: 28px;
       color: #fff;
     }
+  }
+
+  &__settled {
+    margin: -@spacing-sm 0 @spacing-lg;
+    color: rgba(255, 255, 255, 0.55);
+    font-size: @font-size-sm;
+    animation: reward-caption-in 0.4s ease-out 0.75s both;
   }
 
   &__actions {

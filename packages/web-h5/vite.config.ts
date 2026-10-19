@@ -3,6 +3,8 @@ import vue from '@vitejs/plugin-vue'
 import { fileURLToPath, URL } from 'node:url'
 
 // 红色文旅前端 Vite 配置：注入 public-common 别名，统一引用公共包源码
+const proxyTarget = process.env.VITE_PROXY_TARGET || 'http://localhost:8000'
+
 export default defineConfig({
   plugins: [vue()],
   resolve: {
@@ -21,12 +23,14 @@ export default defineConfig({
       // timeout / proxyTimeout 必须不小于前端 axios 超时（见 src/api/timeouts.ts）：
       // 问答走本地模型推理需 110~215s，dev 代理默认可能先断开连接
       '/api': {
-        target: 'http://localhost:8000',
+        target: proxyTarget,
         changeOrigin: true,
         timeout: 360000,
         proxyTimeout: 360000,
       },
-      '/audio': { target: 'http://localhost:8000', changeOrigin: true },
+      '/audio': { target: proxyTarget, changeOrigin: true },
+      // 后端上传的景区/景点图片等静态资源
+      '/uploads': { target: proxyTarget, changeOrigin: true },
     },
   },
 })

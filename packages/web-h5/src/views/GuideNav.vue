@@ -2,10 +2,10 @@
 /**
  * 导览进行中页（离线地图 + 实时导航 + GPS 讲解）
  * - 从 Guide.vue 选定路线后进入，通过 query.routeId 传入路线
- * - mock 定位每 3 秒前进一点，模拟"正在前往"；到达景点自动弹出讲解卡
+ * - 优先使用浏览器 GPS 实时定位并计算真实距离；定位不可用时降级为演示进度
  * - 支持打卡印章、语音讲解播放控制、步行/驾车模式切换
  */
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { RedButton, RedDialog } from '@red-tour-project/common'
 import { ElMessage } from 'element-plus'
@@ -26,6 +26,8 @@ import {
   saveSettings,
   type NarratorGender,
 } from '@/utils/profileStorage'
+import { useGeolocation } from '@/composables/useGeolocation'
+import { buildMapProjection, haversineMeters, projectGeoPoint } from '@/utils/geo'
 
 const route = useRoute()
 const router = useRouter()
@@ -34,8 +36,32 @@ const router = useRouter()
 const routes = ref<GuideRoute[]>([])
 /** 景点列表 */
 const spots = ref<GuideSpot[]>([])
-getRoutes().then((list) => (routes.value = list))
-getSpots().then((list) => (spots.value = list))
+getRoutes().then(({ list }) => (routes.value = list))
+getSpots().then(({ list }) => (spots.value = list))
+
+// ===== 真实 GPS 定位 =====
+const {
+  position: gpsPosition,
+  status: geoStatus,
+  errorMessage: geoError,
+  start: locateMe,
+} = useGeolocation({ watch: true, immediate: true })
+const geoSpots = computed(() =>
+  spots.value.filter((spot) => spot.latitude != null && spot.longitude != null),
+)
+const mapProjection = computed(() =>
+  buildMapProjection(
+    geoSpots.value.map((spot) => ({
+      latitude: spot.latitude as number,
+      longitude: spot.longitude as number,
+    })),
+  ),
+)
+/** 真实位置投影到模拟地图；没有 GPS 时返回 null，页面继续使用演示进度 */
+const gpsMapPos = computed(() => {
+  if (!gpsPosition.value || !mapProjection.value) return null
+  return projectGeoPoint(gpsPosition.value, mapProjection.value)
+})
 
 const routeId = Number(route.query.routeId) || 1
 const currentRoute = computed<GuideRoute | undefined>(
@@ -70,6 +96,7 @@ const remainingCount = computed(
 
 // 当前位置在地图上的坐标（起点=上一景点；未开始时=第一个景点）
 const currentPos = computed(() => {
+  if (gpsMapPos.value) return gpsMapPos.value
   const fromSp =
     currentIndex.value > 0 ? routeSpots.value[currentIndex.value - 1] : routeSpots.value[0]
   const toSp = routeSpots.value[currentIndex.value]
@@ -89,7 +116,9 @@ function startNav() {
   navigating.value = true
   // 用户手势内轻触音，同时解锁后续"到达景点"的自动播报音
   playTapSound()
-  startTicker()
+  // 有真实 GPS 时按实际距离判断到达；没有定位时才使用演示进度
+  if (gpsPosition.value) checkGpsArrival()
+  else startTicker()
 }
 function pauseNav() {
   navigating.value = false
@@ -124,7 +153,7 @@ function nextStop() {
   }
   currentIndex.value += 1
   progress.value = 0
-  startTicker()
+  if (!gpsPosition.value) startTicker()
 }
 
 // ===== 打卡完成庆祝 =====
@@ -213,7 +242,7 @@ async function playNarration() {
   try {
     const res = await askNarration({
       question: `请以讲解员的口吻，详细介绍${spot.name}景点的历史背景与故事`,
-      useVoice: true,
+      useVoice: false,
     })
     narrLoading.value = false
     if (res.audioUrl) {
@@ -261,6 +290,58 @@ watch(lectureVisible, (v) => {
 const mockDistance = ref(450) // 米
 const mockMinutes = ref(6)
 
+// ===== 真实距离 & GPS 到达 =====
+const currentSpotGeo = computed(() => {
+  const spot = currentSpot.value
+  if (!spot || spot.latitude == null || spot.longitude == null) return null
+  return { latitude: spot.latitude, longitude: spot.longitude }
+})
+/** 与当前目标景点的真实直线距离（米）；无 GPS / 景点无经纬度时为 null */
+const realDistanceMeters = computed(() => {
+  if (!gpsPosition.value || !currentSpotGeo.value) return null
+  return haversineMeters(gpsPosition.value, currentSpotGeo.value)
+})
+const distanceText = computed(() => {
+  if (realDistanceMeters.value == null) {
+    return `${Math.max(0, Math.round(mockDistance.value * (1 - progress.value)))} 米`
+  }
+  return realDistanceMeters.value < 1000
+    ? `${Math.round(realDistanceMeters.value)} 米`
+    : `${(realDistanceMeters.value / 1000).toFixed(1)} 公里`
+})
+const minutesText = computed(() => {
+  if (realDistanceMeters.value == null) {
+    return `${Math.max(1, Math.ceil(mockMinutes.value * (1 - progress.value)))} 分钟`
+  }
+  // 步行约 75 米/分钟，驾车约 400 米/分钟
+  const speed = mode.value === 'walk' ? 75 : 400
+  return `${Math.max(1, Math.ceil(realDistanceMeters.value / speed))} 分钟`
+})
+
+/** GPS 到达判定：进入目标景点 40 米内自动打卡并弹出讲解 */
+function checkGpsArrival() {
+  const spot = currentSpot.value
+  if (!navigating.value || !spot || realDistanceMeters.value == null) return
+  if (stampMap.value[spot.id]) return
+  if (realDistanceMeters.value > 40) return
+  progress.value = 1
+  stampMap.value[spot.id] = true
+  addPoints(5)
+  lectureVisible.value = true
+  playScoreSound()
+  stopTicker()
+}
+
+watch([realDistanceMeters, navigating], () => {
+  if (navigating.value && gpsPosition.value) checkGpsArrival()
+})
+// 开始时 GPS 还在定位：拿到坐标后立刻从演示进度切到真实位置
+watch(gpsPosition, (position) => {
+  if (!position || !navigating.value) return
+  stopTicker()
+  checkGpsArrival()
+})
+
 /** 地图上景点间的连线坐标串（L + M） */
 const pathD = computed(() => {
   const coords = routeSpots.value.map((s) => `${s.x},${s.y}`)
@@ -282,6 +363,20 @@ const pathD = computed(() => {
       <span class="guide-nav__map-road"></span>
       <span class="guide-nav__map-lake"></span>
       <span class="guide-nav__map-chip">{{ currentRoute?.name }}</span>
+      <button
+        type="button"
+        class="guide-nav__geo-chip"
+        :class="{ 'is-ok': geoStatus === 'ok', 'is-fail': geoStatus === 'fail' }"
+        :title="geoStatus === 'ok' ? '点击重新定位' : geoError || '点击获取当前位置'"
+        @click="locateMe"
+      >
+        <GuideIcon name="navigation" :size="12" />
+        <template v-if="geoStatus === 'ok'">
+          GPS 已定位<span v-if="gpsPosition?.accuracy"> ±{{ Math.round(gpsPosition.accuracy) }}m</span>
+        </template>
+        <template v-else-if="geoStatus === 'locating'">GPS 定位中…</template>
+        <template v-else>GPS 未定位 · 重试</template>
+      </button>
 
       <!-- 路线虚线 -->
       <svg class="guide-nav__svg" viewBox="0 0 100 100" preserveAspectRatio="none">
@@ -309,13 +404,24 @@ const pathD = computed(() => {
       </button>
 
       <!-- 我的位置（实时蓝点） -->
-      <span
+      <button
+        type="button"
         class="guide-nav__me"
+        :class="{
+          'is-gps': !!gpsPosition,
+          'is-fail': geoStatus === 'fail',
+          'is-locating': geoStatus === 'locating',
+        }"
         :style="{ left: `${currentPos.x}%`, top: `${currentPos.y}%` }"
+        :title="gpsPosition ? '实时位置 · 点击重新定位' : geoError || '点击获取当前位置'"
+        @click="locateMe"
       >
         <span class="guide-nav__me-dot"></span>
-      </span>
+      </button>
     </div>
+    <p v-if="geoStatus === 'fail'" class="guide-nav__geo-tip">
+      {{ geoError }}
+    </p>
 
     <!-- 路线进度条 -->
     <div class="guide-nav__progress">
@@ -339,7 +445,8 @@ const pathD = computed(() => {
         </div>
         <h2 class="guide-nav__spot-name">{{ currentSpot?.name }}</h2>
         <p class="guide-nav__spot-meta">
-          距您 {{ mockDistance }} 米 · 约 {{ mockMinutes }} 分钟
+          距您 {{ distanceText }} · 约 {{ minutesText }}
+          <span v-if="realDistanceMeters != null" class="guide-nav__gps-tag">GPS 实时</span>
           <span v-if="nextSpot" class="guide-nav__spot-next">
             · 下一个 {{ nextSpot.name }}
           </span>
@@ -571,6 +678,31 @@ const pathD = computed(() => {
     color: @color-text-regular;
     font-size: @font-size-sm;
   }
+  &__geo-chip {
+    position: absolute;
+    left: @spacing-sm;
+    bottom: @spacing-sm;
+    z-index: 6;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 3px 9px;
+    border: 1px solid rgba(47, 124, 246, 0.25);
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.92);
+    color: #2f7cf6;
+    font-size: 11px;
+    cursor: pointer;
+
+    &.is-ok {
+      border-color: rgba(82, 196, 26, 0.3);
+      color: #389e0d;
+    }
+    &.is-fail {
+      border-color: rgba(230, 162, 60, 0.4);
+      color: #b26a00;
+    }
+  }
   &__map-road {
     position: absolute;
     width: 140%;
@@ -653,8 +785,13 @@ const pathD = computed(() => {
     position: absolute;
     z-index: 5;
     transform: translate(-50%, -50%);
-    pointer-events: none;
+    padding: 0;
+    border: none;
+    background: transparent;
+    cursor: pointer;
+    transition: left 0.4s ease, top 0.4s ease;
     &-dot {
+      display: block;
       width: 12px;
       height: 12px;
       border-radius: 50%;
@@ -662,6 +799,31 @@ const pathD = computed(() => {
       border: 3px solid #fff;
       box-shadow: 0 0 0 4px rgba(47, 124, 246, 0.3);
     }
+    &.is-gps &-dot {
+      animation: nav-location-pulse 1.6s ease-in-out infinite;
+    }
+    &.is-fail &-dot {
+      background: #9aa4b2;
+      box-shadow: 0 0 0 4px rgba(154, 164, 178, 0.25);
+    }
+    &.is-locating &-dot {
+      animation: nav-location-pulse 1.1s ease-in-out infinite;
+    }
+  }
+  @keyframes nav-location-pulse {
+    0%, 100% { box-shadow: 0 0 0 4px rgba(47, 124, 246, 0.3); }
+    50% { box-shadow: 0 0 0 10px rgba(47, 124, 246, 0.08); }
+  }
+  &__geo-tip {
+    margin: -@spacing-sm 0 @spacing-sm;
+    padding: @spacing-sm @spacing-md;
+    border-radius: @radius-base;
+    background: #fff7e6;
+    color: #9a5b00;
+    font-size: @font-size-sm;
+    line-height: 1.5;
+    overflow-wrap: anywhere;
+    word-break: break-word;
   }
 
   // 进度条
@@ -734,6 +896,17 @@ const pathD = computed(() => {
   }
   &__spot-next {
     color: @color-text-regular;
+  }
+  &__gps-tag {
+    display: inline-block;
+    margin-left: 4px;
+    padding: 0 5px;
+    border-radius: 999px;
+    background: fade(#2f7cf6, 10%);
+    color: #2f7cf6;
+    font-size: 10px;
+    line-height: 16px;
+    vertical-align: 1px;
   }
 
   // 操作区：横向三栏卡片（打卡印章 / 语音讲解 / 下个景点）

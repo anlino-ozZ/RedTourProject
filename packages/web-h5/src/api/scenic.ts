@@ -69,7 +69,7 @@ export async function getScenicAreas(params?: { keyword?: string }): Promise<Sce
     // silent：后端未上线期间由本函数兜底，不弹全局错误提示
     const payload: unknown = await request.get('/scenic-areas', { params, silent: true })
     const list = normalizeList(payload)
-    if (list.length) return { list, source: 'api' }
+    return { list, source: 'api' }
   } catch {
     // 后端接口未上线或网络异常：走下方兜底数据，页面不中断
   }

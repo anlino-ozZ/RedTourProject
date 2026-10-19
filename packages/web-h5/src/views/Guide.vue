@@ -14,6 +14,8 @@ import {
   type ScenicDataSource,
 } from '@/api/scenic'
 import GuideIcon from '@/components/GuideIcon.vue'
+import { useGeolocation } from '@/composables/useGeolocation'
+import { buildMapProjection, projectGeoPoint } from '@/utils/geo'
 
 const route = useRoute()
 const router = useRouter()
@@ -28,14 +30,14 @@ const selectedId = ref<number | null>(null)
 const spots = ref<GuideSpot[]>([])
 /** 路线列表 */
 const routes = ref<GuideRoute[]>([])
-getSpots().then((list) => {
+getSpots().then(({ list }) => {
   spots.value = list
   // 未指定 spotId 时默认选中第一个景点
   if (!route.query.spotId && list.length) {
     selectedSpotId.value = list[0].id
   }
 })
-getRoutes().then((list) => (routes.value = list))
+getRoutes().then(({ list }) => (routes.value = list))
 
 /** 当前景区（公开接口）：列表接口选出当前景区，详情接口补齐详情字段 */
 const scenicArea = ref<ScenicAreaInfo | null>(null)
@@ -74,6 +76,34 @@ const selectedRoute = computed(() => {
   return (
     routes.value.find((r) => r.id === selectedId.value) as GuideRoute | undefined
   ) ?? null
+})
+
+// ===== 真实定位 =====
+const {
+  position: myGeoPosition,
+  status: geoStatus,
+  errorMessage: geoError,
+  start: locateMe,
+} = useGeolocation({ immediate: true })
+
+/** 有经纬度的景点，用于构建与景点 pin 相同的地图投影 */
+const geoSpots = computed(() =>
+  spots.value.filter((spot) => spot.latitude != null && spot.longitude != null),
+)
+const mapProjection = computed(() =>
+  buildMapProjection(
+    geoSpots.value.map((spot) => ({
+      latitude: spot.latitude as number,
+      longitude: spot.longitude as number,
+    })),
+  ),
+)
+/** 实时位置在地图上的百分比坐标；未获取到定位时保留默认展示位 */
+const myMapPos = computed(() => {
+  if (myGeoPosition.value && mapProjection.value) {
+    return projectGeoPoint(myGeoPosition.value, mapProjection.value)
+  }
+  return { x: 48, y: 82 }
 })
 const hottestRouteId = computed(
   () => [...routes.value].sort((a, b) => b.visitCount - a.visitCount)[0]?.id,
@@ -138,10 +168,27 @@ function goRecommend() {
         <span class="guide__map-road guide__map-road--2"></span>
         <span class="guide__map-lake"></span>
         <span class="guide__map-chip">{{ mapChipText }}</span>
-        <span class="guide__map-me">
+        <button
+          type="button"
+          class="guide__map-me"
+          :class="{
+            'is-ok': geoStatus === 'ok',
+            'is-fail': geoStatus === 'fail',
+            'is-locating': geoStatus === 'locating',
+          }"
+          :style="{ left: `${myMapPos.x}%`, top: `${myMapPos.y}%` }"
+          :title="geoStatus === 'ok' ? '点击重新定位' : geoError || '点击获取当前位置'"
+          @click="locateMe"
+        >
           <span class="guide__map-me-dot"></span>
-          <span class="guide__map-me-label">我的位置</span>
-        </span>
+          <span class="guide__map-me-label">
+            <template v-if="geoStatus === 'ok'">
+              我的位置<span v-if="myGeoPosition?.accuracy"> · ±{{ Math.round(myGeoPosition.accuracy) }}m</span>
+            </template>
+            <template v-else-if="geoStatus === 'locating'">定位中…</template>
+            <template v-else>未定位 · 点击重试</template>
+          </span>
+        </button>
         <button
           v-for="spot in spots"
           :key="spot.id"
@@ -155,6 +202,9 @@ function goRecommend() {
           <span class="guide__map-pin-name">{{ spot.name }}</span>
         </button>
       </div>
+      <p v-if="geoStatus === 'fail'" class="guide__map-geo-tip">
+        {{ geoError }}
+      </p>
 
       <div class="guide__spot-panel">
         <div class="guide__spot-head">
@@ -184,9 +234,9 @@ function goRecommend() {
             <div class="guide__spot-route-meta">
               <span>{{ stars(item.difficulty) }}</span>
               <span>约 {{ item.duration }} 分钟</span>
-              <span>距您 {{ item.distance }}km</span>
+              <span v-if="item.distance > 0">距您 {{ item.distance }}km</span>
             </div>
-            <p class="guide__spot-route-visits">{{ formatVisits(item.visitCount) }}</p>
+            <p v-if="item.visitCount > 0" class="guide__spot-route-visits">{{ formatVisits(item.visitCount) }}</p>
           </div>
           <button
             class="guide__spot-route-go"
@@ -243,9 +293,9 @@ function goRecommend() {
             <span class="guide__card-stars">{{ stars(item.difficulty) }}</span>
             <span class="guide__card-duration">约 {{ item.duration }} 分钟</span>
             <span class="guide__card-spots">{{ item.spotCount }} 个景点</span>
-            <span class="guide__card-distance">距您 {{ item.distance }}km</span>
+            <span v-if="item.distance > 0" class="guide__card-distance">距您 {{ item.distance }}km</span>
           </div>
-          <p class="guide__card-visits"><GuideIcon name="hot" :size="12" /> {{ formatVisits(item.visitCount) }}</p>
+          <p v-if="item.visitCount > 0" class="guide__card-visits"><GuideIcon name="hot" :size="12" /> {{ formatVisits(item.visitCount) }}</p>
         </div>
         <button
           class="guide__card-go"
@@ -355,8 +405,22 @@ function goRecommend() {
     position: absolute;
     left: 48%;
     top: 82%;
-    z-index: 3;
+    z-index: 5;
     transform: translate(-50%, -50%);
+    padding: 0;
+    border: none;
+    background: transparent;
+    font: inherit;
+    cursor: pointer;
+    transition: left 0.4s ease, top 0.4s ease;
+
+    &.is-fail &-dot {
+      background: #9aa4b2;
+      box-shadow: 0 0 0 4px rgba(154, 164, 178, 0.25);
+    }
+    &.is-locating &-dot {
+      animation: guide-locate-pulse 1.2s ease-in-out infinite;
+    }
   }
   &__map-me-dot {
     display: block;
@@ -378,6 +442,17 @@ function goRecommend() {
     font-size: 11px;
     white-space: nowrap;
     text-align: center;
+  }
+  &__map-geo-tip {
+    margin: -@spacing-sm 0 @spacing-sm;
+    padding: @spacing-sm @spacing-md;
+    border-radius: @radius-base;
+    background: #fff7e6;
+    color: #9a5b00;
+    font-size: @font-size-sm;
+    line-height: 1.5;
+    overflow-wrap: anywhere;
+    word-break: break-word;
   }
   &__map-pin {
     position: absolute;
@@ -418,6 +493,10 @@ function goRecommend() {
     0% { box-shadow: 0 0 0 0 rgba(196, 30, 58, 0.4); }
     70% { box-shadow: 0 0 0 10px rgba(196, 30, 58, 0); }
     100% { box-shadow: 0 0 0 0 rgba(196, 30, 58, 0); }
+  }
+  @keyframes guide-locate-pulse {
+    0%, 100% { box-shadow: 0 0 0 4px rgba(47, 124, 246, 0.3); }
+    50% { box-shadow: 0 0 0 10px rgba(47, 124, 246, 0.08); }
   }
 
   // 景点信息面板

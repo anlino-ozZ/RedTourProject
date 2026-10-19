@@ -4,11 +4,12 @@
  * 顶部暗色剧本 Hero（剧场氛围）+ 白色内容区上叠（成就徽章 + 待解锁任务）
  * 数据暂为 Mock
  */
-import { computed, onUnmounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { getAchievements, getScripts, getTasks, type AchievementBadge, type InteractionTask, type Script } from '@/api/scripts'
 import { playBadgeShineSound, playLockedSound } from '@/utils/sound'
 import { getUnlockedBadges } from '@/utils/achievementStorage'
+import { getLevelInfo } from '@/utils/levelStorage'
 
 const router = useRouter()
 
@@ -17,6 +18,11 @@ const unlockedMap = getUnlockedBadges()
 const achievements = ref<AchievementBadge[]>([])
 const scripts = ref<Script[]>([])
 const tasks = ref<InteractionTask[]>([])
+/** 累计积分 / 等级（剧本通关后返回本页时重新读取） */
+const levelInfo = ref(getLevelInfo())
+onMounted(() => {
+  levelInfo.value = getLevelInfo()
+})
 
 getAchievements().then((list) => {
   achievements.value = list.map((b) =>
@@ -25,13 +31,16 @@ getAchievements().then((list) => {
       : b,
   )
 })
-getScripts().then((list) => (scripts.value = list))
+getScripts().then(({ list }) => (scripts.value = list))
 getTasks().then((list) => (tasks.value = list))
 
 // 剧本通关进度（真实数据：奖励徽章已解锁即该剧本已通关）
 const playableScripts = computed(() => scripts.value.filter((s) => !s.locked))
+const earnedBadgeIds = computed(
+  () => new Set(achievements.value.filter((badge) => badge.earned).map((badge) => badge.id)),
+)
 const clearedCount = computed(
-  () => playableScripts.value.filter((s) => unlockedMap[s.reward.badgeId]).length,
+  () => playableScripts.value.filter((s) => earnedBadgeIds.value.has(s.reward.badgeId)).length,
 )
 const scriptProgress = computed(() =>
   playableScripts.value.length ? Math.round((clearedCount.value / playableScripts.value.length) * 100) : 0,
@@ -100,7 +109,10 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
       <div class="hero__content">
         <div class="hero__head">
           <h1 class="hero__title">互动中心</h1>
-          <span class="hero__achieve">{{ earnedCount }}/{{ achievements.length }} 成就</span>
+          <div class="hero__stats">
+            <span class="hero__points">积分 {{ levelInfo.points }}</span>
+            <span class="hero__achieve">{{ earnedCount }}/{{ achievements.length }} 成就</span>
+          </div>
         </div>
 
         <!-- 剧本展示位 -->
@@ -347,6 +359,22 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
     font-weight: 700;
     color: #fff;
     letter-spacing: 1px;
+  }
+
+  &__stats {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  &__points {
+    padding: 4px 10px;
+    border-radius: 12px;
+    background: rgba(212, 175, 55, 0.18);
+    border: 1px solid rgba(212, 175, 55, 0.28);
+    color: #f3d77a;
+    font-size: @font-size-sm;
+    font-weight: 600;
   }
 
   &__achieve {
