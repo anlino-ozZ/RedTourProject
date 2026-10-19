@@ -3,25 +3,32 @@
  * 剧本选择页：列出全部剧本（可玩/已通关/即将上线）
  * 通关状态由 achievementStorage 中奖励徽章的解锁记录推导
  */
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { mockScripts, getBadgeById } from '@/mock/interaction'
-import type { Script } from '@/mock/interaction'
+import { getScripts, getAchievements, type Script, type AchievementBadge } from '@/api/scripts'
 import { getUnlockedBadges } from '@/utils/achievementStorage'
 import { playTapSound, playLockedSound } from '@/utils/sound'
 
 const router = useRouter()
 const unlockedMap = getUnlockedBadges()
 
+/** 剧本列表 */
+const scripts = ref<Script[]>([])
+/** 成就徽章列表（用于按 ID 查找名称） */
+const badges = ref<AchievementBadge[]>([])
+getScripts().then((list) => (scripts.value = list))
+getAchievements().then((list) => (badges.value = list))
+
 /** 是否已通关（奖励徽章已解锁即视为通关） */
 function isCleared(script: Script) {
   return !!script.reward.badgeId && !!unlockedMap[script.reward.badgeId]
 }
 
-const playableCount = computed(() => mockScripts.filter((s) => !s.locked).length)
+const playableCount = computed(() => scripts.value.filter((s) => !s.locked).length)
 
 function rewardBadgeName(script: Script) {
-  return script.reward.badgeId ? (getBadgeById(script.reward.badgeId)?.name ?? '') : ''
+  if (!script.reward.badgeId) return ''
+  return badges.value.find((b) => b.id === script.reward.badgeId)?.name ?? ''
 }
 
 function onPick(script: Script) {
@@ -32,12 +39,22 @@ function onPick(script: Script) {
   playTapSound()
   router.push({ path: '/interactive/script', query: { scriptId: script.id } })
 }
+
+/** 返回互动中心：从互动中心进入时原路返回（保留滚动位置）；从首页等入口直达时跳转互动中心页 */
+function goBackInteractive() {
+  const back = router.options.history.state.back as string | null
+  if (back?.startsWith('/interactive')) {
+    router.back()
+  } else {
+    router.push('/interactive')
+  }
+}
 </script>
 
 <template>
   <div class="script-list">
     <!-- 返回互动中心（Layout 顶部标题栏无返回能力，子页自实现） -->
-    <button class="script-list__back" @click="router.back()">
+    <button class="script-list__back" @click="goBackInteractive">
       <span class="script-list__back-arrow">←</span>
       <span>返回互动中心</span>
     </button>
@@ -45,7 +62,7 @@ function onPick(script: Script) {
     <p class="script-list__tip">共 {{ playableCount }} 部剧本可体验，通关可点亮对应成就徽章</p>
 
     <div
-      v-for="s in mockScripts"
+      v-for="s in scripts"
       :key="s.id"
       class="script-card"
       :class="{ 'is-locked': s.locked }"

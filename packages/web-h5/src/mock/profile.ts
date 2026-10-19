@@ -67,9 +67,10 @@ export const mockMedals: MedalItem[] = [
   { name: '万古流芳', icon: 'star', earned: false, desc: '收集全部隐藏文物线索，解锁终极荣誉。' },
 ]
 
+/** 游览足迹：按日期分组，个人页可用日期筛选查看某一天的记录 */
 export const mockFootprints: { date: string; items: FootprintItem[] }[] = [
   {
-    date: '2026.05.08',
+    date: '2026.05.10',
     items: [
       {
         id: 'f1',
@@ -79,11 +80,50 @@ export const mockFootprints: { date: string; items: FootprintItem[] }[] = [
       },
       {
         id: 'f2',
+        title: '红军烈士陵园',
+        meta: '停留时间：36分钟',
+        tags: ['敬献花篮'],
+      },
+    ],
+  },
+  {
+    date: '2026.05.09',
+    items: [
+      {
+        id: 'f3',
+        title: '四渡赤水纪念馆',
+        meta: '停留时间：52分钟',
+        tags: ['完成讲解', '答题 3/3'],
+      },
+      {
+        id: 'f4',
         title: '红色剧本：暗哨行动',
         meta: '进行中 · 进度 85%',
         progress: 85,
         actionText: '继续探索',
         actionTo: '/interactive',
+      },
+    ],
+  },
+  {
+    date: '2026.05.08',
+    items: [
+      {
+        id: 'f5',
+        title: '遵义会议会址',
+        meta: '停留时间：1小时05分钟',
+        tags: ['完成讲解', '打卡成功'],
+      },
+    ],
+  },
+  {
+    date: '2026.05.06',
+    items: [
+      {
+        id: 'f6',
+        title: '娄山关战斗遗址',
+        meta: '停留时间：26分钟',
+        tags: ['打卡成功'],
       },
     ],
   },

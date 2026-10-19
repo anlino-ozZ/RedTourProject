@@ -11,13 +11,14 @@ import { RedButton } from '@red-tour-project/common'
 import { ElMessage } from 'element-plus'
 import {
   recommendRoutes,
-  routes,
-  spots,
+  getRoutes,
   type FitnessLevel,
   type GuideRoute,
   type InterestTag,
   type RecommendOrigin,
-} from '@/mock/guide'
+} from '@/api/routes'
+import { getSpots, type GuideSpot } from '@/api/spots'
+import GuideIcon from '@/components/GuideIcon.vue'
 import { playCorrectSound, playScoreSound } from '@/utils/sound'
 
 const router = useRouter()
@@ -47,7 +48,14 @@ const origin = computed<RecommendOrigin | undefined>(() => {
   }
   return undefined
 })
-const originSpot = computed(() => spots.find((s) => s.id === originSpotId.value) ?? null)
+/** 景点列表（手动选择出发点用） */
+const spots = ref<GuideSpot[]>([])
+/** 路线列表 */
+const routes = ref<GuideRoute[]>([])
+getSpots().then((list) => (spots.value = list))
+getRoutes().then((list) => (routes.value = list))
+
+const originSpot = computed(() => spots.value.find((s) => s.id === originSpotId.value) ?? null)
 
 /** 实时定位：浏览器 geolocation，失败可手动选择降级 */
 function useLocation() {
@@ -96,7 +104,7 @@ const selectedRoute = computed(() => {
   if (!selectedId.value) return null
   return (
     recommended.value.find((r) => r.id === selectedId.value) ??
-    routes.find((r) => r.id === selectedId.value) ??
+    routes.value.find((r) => r.id === selectedId.value) ??
     null
   )
 })
@@ -153,7 +161,7 @@ function stars(difficulty: number): string {
       </div>
 
       <div class="guide-rec__block">
-        <h3 class="guide-rec__label">🗂️ 您感兴趣的主题</h3>
+        <h3 class="guide-rec__label"><GuideIcon name="folder" :size="15" /> 您感兴趣的主题</h3>
         <div class="guide-rec__chips">
           <button
             v-for="tag in INTEREST_OPTIONS"
@@ -169,7 +177,7 @@ function stars(difficulty: number): string {
       </div>
 
       <div class="guide-rec__block">
-        <h3 class="guide-rec__label">📍 出发位置</h3>
+        <h3 class="guide-rec__label"><GuideIcon name="pin" :size="15" /> 出发位置</h3>
         <div class="guide-rec__origin-tabs">
           <button
             type="button"
@@ -177,7 +185,7 @@ function stars(difficulty: number): string {
             :class="{ 'is-active': originMode === 'geo' }"
             @click="originMode = 'geo'"
           >
-            🛰️ 实时定位
+            <GuideIcon name="navigation" :size="14" /> 实时定位
           </button>
           <button
             type="button"
@@ -185,7 +193,7 @@ function stars(difficulty: number): string {
             :class="{ 'is-active': originMode === 'manual' }"
             @click="originMode = 'manual'"
           >
-            🏛️ 手动选择
+            <GuideIcon name="landmark" :size="14" /> 手动选择
           </button>
         </div>
 
@@ -200,7 +208,7 @@ function stars(difficulty: number): string {
           >
             <template v-if="geoState === 'locating'">定位中...</template>
             <template v-else-if="geoState === 'ok'">✓ 已获取实时位置 · 点击重新定位</template>
-            <template v-else>🛰️ 使用我的实时定位</template>
+            <template v-else><GuideIcon name="navigation" :size="14" /> 使用我的实时定位</template>
           </button>
           <p class="guide-rec__origin-tip">
             将结合您的实时位置、景区热度与距离为您优化推荐
@@ -232,7 +240,7 @@ function stars(difficulty: number): string {
       </div>
 
       <div class="guide-rec__block">
-        <h3 class="guide-rec__label">💪 体力等级</h3>
+        <h3 class="guide-rec__label"><GuideIcon name="activity" :size="15" /> 体力等级</h3>
         <div class="guide-rec__fitness">
           <button
             v-for="opt in FITNESS_OPTIONS"
@@ -250,7 +258,7 @@ function stars(difficulty: number): string {
 
       <div class="guide-rec__block">
         <div class="guide-rec__label-row">
-          <h3 class="guide-rec__label">⏱️ 可用时长</h3>
+          <h3 class="guide-rec__label"><GuideIcon name="clock" :size="15" /> 可用时长</h3>
           <span class="guide-rec__duration">{{ duration }} 分钟</span>
         </div>
         <input
@@ -276,7 +284,7 @@ function stars(difficulty: number): string {
           :disabled="!canGenerate"
           @click="generate"
         >
-          ✨ AI 为我推荐路线
+          <GuideIcon name="sparkles" :size="16" /> AI 为我推荐路线
         </RedButton>
       </div>
     </template>
@@ -297,7 +305,7 @@ function stars(difficulty: number): string {
     <!-- AI 推荐结果 -->
     <template v-if="aiReady">
       <div class="guide-rec__pref-head">
-        <h2 class="guide-rec__title">✨ 为您推荐 {{ recommended.length }} 条路线</h2>
+        <h2 class="guide-rec__title"><GuideIcon name="sparkles" :size="20" /> 为您推荐 {{ recommended.length }} 条路线</h2>
         <p class="guide-rec__sub">
           {{ FITNESS_OPTIONS.find((f) => f.key === fitness)?.label }} ·
           约 {{ duration }} 分钟 · 兴趣：{{ interests.join(' / ') }} ·
@@ -386,6 +394,9 @@ function stars(difficulty: number): string {
     margin-bottom: @spacing-sm;
   }
   &__title {
+    display: flex;
+    align-items: center;
+    gap: 6px;
     margin: 0 0 @spacing-xs;
     font-size: 22px;
     font-weight: 700;
@@ -411,6 +422,9 @@ function stars(difficulty: number): string {
     margin-bottom: @spacing-lg;
   }
   &__label {
+    display: flex;
+    align-items: center;
+    gap: 6px;
     margin: 0 0 @spacing-sm;
     font-size: @font-size-base;
     font-weight: 600;

@@ -10,19 +10,16 @@ import { useRoute, useRouter } from 'vue-router'
 import { RedButton, RedDialog } from '@red-tour-project/common'
 import { ElMessage } from 'element-plus'
 import {
-  routes,
-  spots,
-  type GuideRoute,
-  type GuideSpot,
-} from '@/mock/guide'
-import {
   playScoreSound,
   playTapSound,
   playFanfareSound,
   playBadgeShineSound,
 } from '@/utils/sound'
 import { askNarration, resolveAudioUrl } from '@/api/guide'
+import { getRoutes, type GuideRoute } from '@/api/routes'
+import { getSpots, type GuideSpot } from '@/api/spots'
 import { speak, stopSpeak } from '@/utils/narrator'
+import GuideIcon from '@/components/GuideIcon.vue'
 import { addPoints } from '@/utils/levelStorage'
 import {
   getSettings,
@@ -33,17 +30,25 @@ import {
 const route = useRoute()
 const router = useRouter()
 
+/** 路线列表 */
+const routes = ref<GuideRoute[]>([])
+/** 景点列表 */
+const spots = ref<GuideSpot[]>([])
+getRoutes().then((list) => (routes.value = list))
+getSpots().then((list) => (spots.value = list))
+
 const routeId = Number(route.query.routeId) || 1
-const currentRoute = computed<GuideRoute>(
-  () => routes.find((r) => r.id === routeId) ?? routes[0],
+const currentRoute = computed<GuideRoute | undefined>(
+  () => routes.value.find((r) => r.id === routeId) ?? routes.value[0],
 )
 
 /** 该路线上的景点列表（按顺序） */
-const routeSpots = computed<GuideSpot[]>(() =>
-  currentRoute.value.spotIds
-    .map((id) => spots.find((s) => s.id === id))
-    .filter((s): s is GuideSpot => !!s),
-)
+const routeSpots = computed<GuideSpot[]>(() => {
+  if (!currentRoute.value) return []
+  return currentRoute.value.spotIds
+    .map((id) => spots.value.find((s) => s.id === id))
+    .filter((s): s is GuideSpot => !!s)
+})
 
 // ===== 导航状态机 =====
 /** 当前正在前往的景点索引（0 表示第一个） */
@@ -143,16 +148,27 @@ watch(allStamped, (all) => {
   }, 600)
 })
 
-// 彩带粒子：进入页面时生成一次（随机位置/颜色/时长）
-const CONFETTI_COLORS = ['#c41e3a', '#f5a623', '#52c41a', '#2f7cf6', '#d4af37', '#722ed1']
-const confetti = Array.from({ length: 28 }, (_, i) => ({
-  id: i,
-  left: Math.random() * 100,
-  delay: Math.random() * 0.8,
-  duration: 1.6 + Math.random() * 1.4,
-  color: CONFETTI_COLORS[i % CONFETTI_COLORS.length],
-  size: 6 + Math.random() * 6,
-}))
+// 撒花：进入页面时生成一次（确定性伪随机，避免每次渲染位置跳动）
+// 小方片 / 圆点 / 短条混排，负延迟让粒子一出现就均匀铺满全屏，不会挤成一条横带
+const CONFETTI_COLORS = ['#d92b4b', '#e6b422', '#f08b3a', '#f7efe2', '#ffd66b', '#a8202f', '#8f1d2c']
+const confetti = Array.from({ length: 72 }, (_, i) => {
+  const mode = i % 5
+  const width = 5 + ((i * 7) % 4) * 3
+  const height = mode === 1 ? width : mode === 2 ? width * 2.1 : width * 0.6
+  const dur = 4.6 + (i % 7) * 0.45
+  return {
+    id: i,
+    left: `${(i * 19 + 7) % 98}%`,
+    width: `${width.toFixed(1)}px`,
+    height: `${height.toFixed(1)}px`,
+    radius: mode === 2 ? '1px' : mode === 3 ? '999px' : '2px',
+    bg: CONFETTI_COLORS[i % CONFETTI_COLORS.length],
+    delay: `-${((i * 1.13) % dur).toFixed(2)}s`,
+    dur: `${dur.toFixed(2)}s`,
+    drift: `${(((i * 7) % 17) - 8) * 6}px`,
+    sway: `${6 + ((i * 11) % 14)}px`,
+  }
+})
 onBeforeUnmount(() => {
   stopTicker()
   stopNarration()
@@ -257,7 +273,7 @@ const pathD = computed(() => {
   <div class="guide-nav">
     <!-- 顶部离线模式标识 -->
     <div class="guide-nav__offline">
-      <span>📡 离线地图模式 · 无需网络即可导航</span>
+      <span><GuideIcon name="map" :size="13" /> 离线地图模式 · 无需网络即可导航</span>
     </div>
 
     <!-- 模拟地图 -->
@@ -265,7 +281,7 @@ const pathD = computed(() => {
       <!-- 装饰 -->
       <span class="guide-nav__map-road"></span>
       <span class="guide-nav__map-lake"></span>
-      <span class="guide-nav__map-chip">{{ currentRoute.name }}</span>
+      <span class="guide-nav__map-chip">{{ currentRoute?.name }}</span>
 
       <!-- 路线虚线 -->
       <svg class="guide-nav__svg" viewBox="0 0 100 100" preserveAspectRatio="none">
@@ -353,7 +369,11 @@ const pathD = computed(() => {
     <div class="guide-nav__toolbar">
       <div class="guide-nav__tool">
         <div class="guide-nav__tool-top">
-          <span class="guide-nav__tool-icon">{{ stampMap[currentSpot?.id ?? -1] ? '✅' : '🔖' }}</span>
+          <GuideIcon
+            class="guide-nav__tool-icon"
+            :name="stampMap[currentSpot?.id ?? -1] ? 'seal' : 'bookmark'"
+            :size="16"
+          />
           <span class="guide-nav__tool-title">打卡印章</span>
           <span v-if="currentSpot" class="guide-nav__tool-badge">{{ currentSpot.name.slice(0, 4) }}</span>
         </div>
@@ -370,7 +390,7 @@ const pathD = computed(() => {
 
       <div class="guide-nav__tool">
         <div class="guide-nav__tool-top">
-          <span class="guide-nav__tool-icon">🎧</span>
+          <GuideIcon class="guide-nav__tool-icon" name="headphones" :size="16" />
           <span class="guide-nav__tool-title">语音讲解</span>
         </div>
         <button
@@ -384,7 +404,7 @@ const pathD = computed(() => {
 
       <div class="guide-nav__tool">
         <div class="guide-nav__tool-top">
-          <span class="guide-nav__tool-icon">→</span>
+          <GuideIcon class="guide-nav__tool-icon" name="chevron-right" :size="16" />
           <span class="guide-nav__tool-title">下个景点</span>
         </div>
         <button
@@ -400,10 +420,7 @@ const pathD = computed(() => {
 
     <!-- 退出导览：固定在页面左下角，不随滚动 -->
     <button class="guide-nav__back" @click="router.back()">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
-        stroke-linecap="round" stroke-linejoin="round">
-        <path d="M15 6l-6 6 6 6" />
-      </svg>
+      <GuideIcon name="chevron-left" :size="16" />
       退出导览
     </button>
 
@@ -413,7 +430,8 @@ const pathD = computed(() => {
         class="guide-nav__finish"
         @click="celebrateVisible = true"
       >
-        🎉 路线完成
+        <GuideIcon name="check-circle" :size="16" />
+        路线完成
       </button>
     </div>
 
@@ -428,7 +446,7 @@ const pathD = computed(() => {
         <div class="lecture">
           <p class="lecture__desc">{{ currentSpot?.desc }}</p>
           <div v-if="currentSpot?.audioLen" class="lecture__audio">
-            <span>🎧 语音讲解</span>
+            <span><GuideIcon name="headphones" :size="13" /> 语音讲解</span>
             <span class="lecture__audio-len">
               约 {{ Math.floor(currentSpot.audioLen / 60) }} 分
               {{ currentSpot.audioLen % 60 }} 秒
@@ -444,18 +462,18 @@ const pathD = computed(() => {
               :class="{ 'is-active': voiceGender === 'male' }"
               @click="setVoiceGender('male')"
             >
-              🎙️ 播音男主播
+              <GuideIcon name="mic" :size="13" /> 播音男主播
             </button>
             <button
               class="lecture__voice"
               :class="{ 'is-active': voiceGender === 'female' }"
               @click="setVoiceGender('female')"
             >
-              🎙️ 播音女主播
+              <GuideIcon name="mic" :size="13" /> 播音女主播
             </button>
           </div>
           <p class="lecture__tip">
-            您已自动打卡成功 ✅ · 继续前进将前往
+            <GuideIcon name="check-circle" :size="13" /> 您已自动打卡成功 · 继续前进将前往
             <strong>{{ nextSpot?.name ?? '终点' }}</strong>
           </p>
         </div>
@@ -474,18 +492,21 @@ const pathD = computed(() => {
         :key="c.id"
         class="celebrate__confetti"
         :style="{
-          left: `${c.left}%`,
-          background: c.color,
-          width: `${c.size}px`,
-          height: `${c.size * 0.5}px`,
-          animationDelay: `${c.delay}s`,
-          animationDuration: `${c.duration}s`,
+          left: c.left,
+          background: c.bg,
+          width: c.width,
+          height: c.height,
+          borderRadius: c.radius,
+          '--drift': c.drift,
+          '--sway': c.sway,
+          animationDelay: c.delay,
+          animationDuration: c.dur,
         }"
       ></span>
       <div class="celebrate__card">
-        <span class="celebrate__trophy">🏆</span>
+        <span class="celebrate__trophy"><GuideIcon name="trophy" :size="56" /></span>
         <h2 class="celebrate__title">恭喜打卡完成！</h2>
-        <p class="celebrate__sub">{{ currentRoute.name }}</p>
+        <p class="celebrate__sub">{{ currentRoute?.name }}</p>
         <p class="celebrate__num">共打卡 {{ routeSpots.length }} 个景点 · 全部完成</p>
         <div class="celebrate__actions">
           <RedButton type="primary" size="medium" @click="router.push('/guide')">
@@ -741,8 +762,8 @@ const pathD = computed(() => {
     gap: 4px;
   }
   &__tool-icon {
-    font-size: 16px;
-    line-height: 1;
+    display: inline-flex;
+    color: @color-primary;
   }
   &__tool-title {
     font-size: 13px;
@@ -814,6 +835,9 @@ const pathD = computed(() => {
     }
   }
   &__finish {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
     border: none;
     background: #52c41a;
     color: #fff;
@@ -905,22 +929,35 @@ const pathD = computed(() => {
 
   &__confetti {
     position: absolute;
-    top: -12px;
-    border-radius: 2px;
+    top: 0;
+    // 每片独立的横向落点与摆动幅度，由内联样式注入
+    --drift: 0px;
+    --sway: 10px;
     opacity: 0;
-    animation: celebrate-fall linear infinite;
+    animation: celebrate-fall 5.4s ease-in infinite;
     pointer-events: none;
+    will-change: transform, opacity;
   }
   @keyframes celebrate-fall {
     0% {
-      transform: translateY(0) rotate(0deg);
+      transform: translate3d(0, -14vh, 0) rotate(0deg);
+      opacity: 0;
+    }
+    10% {
       opacity: 1;
     }
+    35% {
+      transform: translate3d(var(--sway), 24vh, 0) rotate(190deg);
+    }
+    65% {
+      transform: translate3d(calc(var(--sway) * -0.8), 60vh, 0) rotate(400deg);
+    }
     100% {
-      transform: translateY(105vh) rotate(540deg);
-      opacity: 0.6;
+      transform: translate3d(var(--drift), 116vh, 0) rotate(620deg);
+      opacity: 0.5;
     }
   }
+
 
   &__card {
     position: relative;
@@ -944,9 +981,8 @@ const pathD = computed(() => {
     }
   }
   &__trophy {
-    display: inline-block;
-    font-size: 56px;
-    line-height: 1;
+    display: inline-flex;
+    color: #d4af37;
     animation: celebrate-bounce 1.2s ease-in-out infinite;
   }
   @keyframes celebrate-bounce {

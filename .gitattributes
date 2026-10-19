@@ -1,0 +1,2 @@
+# Shell 脚本在树莓派/Linux 上直接执行，必须保持 LF 行尾
+*.sh text eol=lf

@@ -4,7 +4,16 @@
 import { computed, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { RedButton } from '@red-tour-project/common'
-import { routes, spots, type GuideRoute } from '@/mock/guide'
+import { getRoutes, type GuideRoute } from '@/api/routes'
+import { getSpots, type GuideSpot } from '@/api/spots'
+import {
+  DEFAULT_SCENIC_AREA_ID,
+  getScenicAreaById,
+  getScenicAreas,
+  type ScenicAreaInfo,
+  type ScenicDataSource,
+} from '@/api/scenic'
+import GuideIcon from '@/components/GuideIcon.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -13,33 +22,68 @@ const view = ref<'map' | 'list'>(
   route.query.view === 'list' ? 'list' : 'map',
 )
 const sortType = ref<'recommend' | 'distance'>('recommend')
-const selectedSpotId = ref<number>(
-  route.query.spotId ? Number(route.query.spotId) : spots[0].id,
-)
 const selectedId = ref<number | null>(null)
 
+/** 景点列表 */
+const spots = ref<GuideSpot[]>([])
+/** 路线列表 */
+const routes = ref<GuideRoute[]>([])
+getSpots().then((list) => {
+  spots.value = list
+  // 未指定 spotId 时默认选中第一个景点
+  if (!route.query.spotId && list.length) {
+    selectedSpotId.value = list[0].id
+  }
+})
+getRoutes().then((list) => (routes.value = list))
+
+/** 当前景区（公开接口）：列表接口选出当前景区，详情接口补齐详情字段 */
+const scenicArea = ref<ScenicAreaInfo | null>(null)
+/** 景区数据来源：后端未上线时为 fallback（本地兜底） */
+const scenicSource = ref<ScenicDataSource>('fallback')
+getScenicAreas().then(async ({ list, source }) => {
+  const current = list.find((area) => area.id === DEFAULT_SCENIC_AREA_ID) ?? list[0]
+  if (!current) return
+  scenicArea.value = current
+  scenicSource.value = source
+  const detail = await getScenicAreaById(current.id)
+  if (detail.area) {
+    scenicArea.value = detail.area
+    scenicSource.value = detail.source
+  }
+})
+
+const selectedSpotId = ref<number>(Number(route.query.spotId) || 0)
+
 const selectedSpot = computed(
-  () => spots.find((s) => s.id === selectedSpotId.value) ?? spots[0],
+  () => spots.value.find((s) => s.id === selectedSpotId.value) ?? spots.value[0],
 )
 const spotRoutes = computed(() =>
-  routes.filter((r) => r.spotIds.includes(selectedSpotId.value)),
+  routes.value.filter((r) => r.spotIds.includes(selectedSpotId.value)),
 )
 const sortedRoutes = computed(() => {
   if (sortType.value === 'distance') {
-    return [...routes].sort((a, b) => a.distance - b.distance)
+    return [...routes.value].sort((a, b) => a.distance - b.distance)
   }
-  return [...routes].sort(
+  return [...routes.value].sort(
     (a, b) => (b.tag === '推荐' ? 1 : 0) - (a.tag === '推荐' ? 1 : 0),
   )
 })
 const selectedRoute = computed(() => {
   if (!selectedId.value) return null
   return (
-    routes.find((r) => r.id === selectedId.value) as GuideRoute | undefined
+    routes.value.find((r) => r.id === selectedId.value) as GuideRoute | undefined
   ) ?? null
 })
 const hottestRouteId = computed(
-  () => [...routes].sort((a, b) => b.visitCount - a.visitCount)[0]?.id,
+  () => [...routes.value].sort((a, b) => b.visitCount - a.visitCount)[0]?.id,
+)
+
+/** 地图标题：后端景区接口可用时展示后端景区名，未上线时保持原有文案 */
+const mapChipText = computed(() =>
+  scenicSource.value === 'api' && scenicArea.value
+    ? `${scenicArea.value.name} · 景区示意图`
+    : '井冈山革命根据地 · 景区示意图',
 )
 
 function stars(difficulty: number): string {
@@ -93,7 +137,7 @@ function goRecommend() {
         <span class="guide__map-road guide__map-road--1"></span>
         <span class="guide__map-road guide__map-road--2"></span>
         <span class="guide__map-lake"></span>
-        <span class="guide__map-chip">井冈山革命根据地 · 景区示意图</span>
+        <span class="guide__map-chip">{{ mapChipText }}</span>
         <span class="guide__map-me">
           <span class="guide__map-me-dot"></span>
           <span class="guide__map-me-label">我的位置</span>
@@ -115,10 +159,11 @@ function goRecommend() {
       <div class="guide__spot-panel">
         <div class="guide__spot-head">
           <h3 class="guide__spot-name">
-            {{ selectedSpot.name }}
-            <span class="guide__spot-tag">{{ selectedSpot.tag }}</span>
+            {{ selectedSpot?.name }}
+            <span class="guide__spot-tag">{{ selectedSpot?.tag }}</span>
           </h3>
-          <p class="guide__spot-desc">{{ selectedSpot.desc }}</p>
+
+          <p class="guide__spot-desc">{{ selectedSpot?.desc }}</p>
         </div>
 
         <p class="guide__spot-sub">
@@ -134,7 +179,7 @@ function goRecommend() {
           <div class="guide__spot-route-main" @click="selectRoute(item.id)">
             <div class="guide__spot-route-head">
               <h4 class="guide__spot-route-name">{{ item.name }}</h4>
-              <span v-if="item.id === hottestRouteId" class="guide__spot-route-hot">🔥 热门</span>
+              <span v-if="item.id === hottestRouteId" class="guide__spot-route-hot"><GuideIcon name="hot" :size="11" /> 热门</span>
             </div>
             <div class="guide__spot-route-meta">
               <span>{{ stars(item.difficulty) }}</span>
@@ -191,7 +236,7 @@ function goRecommend() {
           <div class="guide__card-head">
             <h3 class="guide__card-name">{{ item.name }}</h3>
             <span class="guide__card-tag">{{ item.tag }}</span>
-            <span v-if="item.id === hottestRouteId" class="guide__card-hot">🔥 热门</span>
+            <span v-if="item.id === hottestRouteId" class="guide__card-hot"><GuideIcon name="hot" :size="11" /> 热门</span>
           </div>
           <p class="guide__card-desc">{{ item.desc }}</p>
           <div class="guide__card-meta">
@@ -200,7 +245,7 @@ function goRecommend() {
             <span class="guide__card-spots">{{ item.spotCount }} 个景点</span>
             <span class="guide__card-distance">距您 {{ item.distance }}km</span>
           </div>
-          <p class="guide__card-visits">🔥 {{ formatVisits(item.visitCount) }}</p>
+          <p class="guide__card-visits"><GuideIcon name="hot" :size="12" /> {{ formatVisits(item.visitCount) }}</p>
         </div>
         <button
           class="guide__card-go"
@@ -214,7 +259,7 @@ function goRecommend() {
     <!-- ===== AI 推荐独立入口（路由跳转，不展开面板） ===== -->
     <button class="guide__ai-entry" @click="goRecommend">
       <span class="guide__ai-entry-text">AI 为我推荐专属路线</span>
-      <span class="guide__ai-entry-arrow">→</span>
+      <span class="guide__ai-entry-arrow"><GuideIcon name="arrow-right" :size="16" /></span>
     </button>
 
     <!-- 底部固定操作栏（地图/列表选中路线后） -->
@@ -445,6 +490,9 @@ function goRecommend() {
     color: @color-text-primary;
   }
   &__spot-route-hot {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
     font-size: 11px;
     color: #e8601c;
   }
@@ -595,6 +643,9 @@ function goRecommend() {
     font-weight: 500;
   }
   &__card-hot {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
     font-size: 11px;
     color: #e8601c;
   }
@@ -617,6 +668,9 @@ function goRecommend() {
     letter-spacing: 2px;
   }
   &__card-visits {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
     margin: 0;
     font-size: @font-size-sm;
     color: #e8601c;
@@ -647,9 +701,8 @@ function goRecommend() {
     text-align: left;
   }
   &__ai-entry-arrow {
-    font-size: 16px;
+    display: inline-flex;
     color: @color-primary;
-    transform: translateY(-2px);
   }
 
   // 底部固定操作栏
