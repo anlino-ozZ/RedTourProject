@@ -90,7 +90,18 @@ const routes: RouteRecordRaw[] = [
 
 const router = createRouter({
   history: createWebHistory(),
-  routes,
+  routes: [
+    {
+      path: '/',
+      name: 'home',
+      component: () => import('@/views/Home.vue'),
+    },
+    {
+      // 姿态成就扫码领取落地页（W-T-07，触摸屏二维码 /claim?token=xxx）
+      path: '/claim',
+      name: 'claim',
+      component: () => import('@/views/Claim.vue'),
+    },
+  ],
 })
-
 export default router
