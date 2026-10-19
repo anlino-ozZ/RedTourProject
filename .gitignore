@@ -70,3 +70,5 @@ desktop.ini
 # 子包 npm lock
 packages/*/package-lock.json
 public-common/package-lock.json
+# pnpm lock
+pnpm-lock.yaml
