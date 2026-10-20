@@ -28,6 +28,11 @@ public class ApiResponse<T> {
         return new ApiResponse<>(resultCode.getCode(), resultCode.getMessage(), null);
     }
 
+    /** 错误响应（使用指定状态码，附自定义消息） */
+    public static <T> ApiResponse<T> error(ResultCode resultCode, String message) {
+        return new ApiResponse<>(resultCode.getCode(), message, null);
+    }
+
     /** 错误响应（自定义消息） */
     public static <T> ApiResponse<T> error(int code, String message) {
         return new ApiResponse<>(code, message, null);

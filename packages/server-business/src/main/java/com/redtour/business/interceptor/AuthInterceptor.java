@@ -6,6 +6,7 @@ import com.redtour.business.entity.SysUser;
 import com.redtour.business.exception.BusinessException;
 import com.redtour.business.mapper.UserMapper;
 import com.redtour.business.util.JwtUtil;
+import org.springframework.data.redis.core.StringRedisTemplate;
 import io.jsonwebtoken.Claims;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
@@ -28,6 +29,7 @@ public class AuthInterceptor implements HandlerInterceptor {
 
     private final JwtUtil jwtUtil;
     private final UserMapper userMapper;
+    private final StringRedisTemplate redisTemplate;
 
     @Override
     public boolean preHandle(HttpServletRequest request, HttpServletResponse response, Object handler) {
@@ -40,6 +42,10 @@ public class AuthInterceptor implements HandlerInterceptor {
             throw new BusinessException(ResultCode.UNAUTHORIZED, "缺少 Authorization 头");
         }
         String token = header.substring(7);
+        // 校验登出黑名单：已登出的 token 立即失效（与 AuthServiceImpl.LOGOUT 写入的 key 保持一致）
+        if (Boolean.TRUE.equals(redisTemplate.hasKey("jwt:blacklist:" + token))) {
+            throw new BusinessException(ResultCode.UNAUTHORIZED, "Token 已登出");
+        }
         Claims claims = jwtUtil.parse(token);
         if (claims == null) {
             throw new BusinessException(ResultCode.UNAUTHORIZED, "Token 无效或已过期");

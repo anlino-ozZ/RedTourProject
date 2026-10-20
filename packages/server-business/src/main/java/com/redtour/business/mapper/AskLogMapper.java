@@ -17,14 +17,20 @@ import java.util.List;
 @Mapper
 public interface AskLogMapper {
 
-    /** 写入一次问答记录。 */
+    /** 写入一次问答记录（含 user_id 与 client_id，离线同步去重键）。 */
     @Insert("INSERT INTO ask_log "
-            + "(scenic_area_id, question, answer, sources, duration_ms, device_id) "
-            + "VALUES (#{scenicAreaId}, #{question}, #{answer}, #{sources}, #{durationMs}, #{deviceId})")
+            + "(scenic_area_id, user_id, question, answer, sources, duration_ms, device_id, client_id) "
+            + "VALUES (#{scenicAreaId}, #{userId}, #{question}, #{answer}, #{sources}, #{durationMs}, #{deviceId}, #{clientId})")
     @Options(useGeneratedKeys = true, keyProperty = "id")
     int insert(AskLog askLog);
 
-    /** 查询指定景区最近一段时间的热门有效问题。 */
+    /** 是否已存在该 clientId 的问答（用于同步去重预检）。 */
+    @Select("SELECT COUNT(1) FROM ask_log WHERE client_id = #{clientId} LIMIT 1")
+    int countByClientId(@Param("clientId") String clientId);
+
+    /** 查询指定景区最近一段时间的热门有效问题。
+     * 注意：本方法仅用于推荐问题聚合，与离线同步写入互不影响。
+     */
     @Select("""
             SELECT MIN(id) AS id,
                    TRIM(question) AS question,
