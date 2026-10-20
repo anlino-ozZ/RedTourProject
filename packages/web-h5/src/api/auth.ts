@@ -28,9 +28,9 @@ export function register(params: RegisterParams): Promise<AuthResult> {
   return request.post('/auth/register', params, { silent: true })
 }
 
-/** 获取当前登录用户信息（需登录，用于刷新页面后恢复用户信息） */
+/** 获取当前登录用户信息（后端实际路由为 GET /users/me，需登录） */
 export function fetchMe(): Promise<AuthResult> {
-  return request.get('/auth/me', { silent: true })
+  return request.get('/users/me', { silent: true })
 }
 
 /** 登出：后端把当前 token 写入 Redis 黑名单，前端同时清除本地 token */

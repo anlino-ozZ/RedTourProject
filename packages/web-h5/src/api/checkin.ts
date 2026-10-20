@@ -1,22 +1,11 @@
 /**
  * 导览景点打卡接口
  *
- * H-11 任务表主路径：POST /checkpoints/check
- * docs/05 全局接口文档另定义了 POST /routes/{id}/checkin，
- * 主接口 404/405 时自动走文档路径，避免前后端联调路径不一致。
+ * 对接后端真实接口：POST /routes/{id}/checkin。
  */
 import axios from 'axios'
 import type { CheckinRequest, CheckinResult } from '@red-tour-project/common'
 import request, { ApiError } from './request'
-
-const CHECKIN_PRIMARY_ENDPOINT = '/checkpoints/check'
-
-/** 主接口不存在时是否值得尝试文档里的兼容路径 */
-function isEndpointMissing(error: unknown): boolean {
-  if (!axios.isAxiosError(error)) return false
-  const status = error.response?.status
-  return status === 404 || status === 405
-}
 
 function normalizeResult(
   payload: CheckinResult | null | undefined,
@@ -38,17 +27,6 @@ export async function checkinRouteSpot(
   routeId: number,
   body: CheckinRequest,
 ): Promise<CheckinResult> {
-  try {
-    const payload = (await request.post(
-      CHECKIN_PRIMARY_ENDPOINT,
-      { routeId, ...body },
-      { silent: true },
-    )) as CheckinResult | null
-    return normalizeResult(payload, body)
-  } catch (error) {
-    if (!isEndpointMissing(error)) throw error
-  }
-
   const payload = (await request.post(
     `/routes/${routeId}/checkin`,
     body,
