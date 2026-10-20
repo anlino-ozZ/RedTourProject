@@ -6,14 +6,23 @@
  * 纯 UI，提交逻辑为 mock，后续接入 API
  */
 import { ref, computed, onUnmounted } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { RedButton } from '@red-tour-project/common'
 import { playCorrectSound, playTapSound, playWrongSound } from '@/utils/sound'
 import { useUserStore } from '@/store/user'
 import { ApiError } from '@/api/request'
 
 const router = useRouter()
+const route = useRoute()
 const userStore = useUserStore()
+
+/** 被登录保护拦截后，登录成功回到原目标页 */
+const loginRedirect = computed(() => {
+  const target = route.query.redirect
+  return typeof target === 'string' && target.startsWith('/') && !target.startsWith('//')
+    ? target
+    : '/'
+})
 
 type Mode = 'login' | 'register' | 'forgot'
 const mode = ref<Mode>('login')
@@ -243,7 +252,7 @@ async function onSubmit() {
     }
     // 登录/注册成功：上行琶音后再跳转
     playCorrectSound()
-    router.push('/')
+    router.push(loginRedirect.value)
   } catch (err) {
     // 业务错误展示后端 message（如"用户名或密码错误"）；网络异常等给通用文案
     submitError.value = err instanceof ApiError ? err.message : '网络异常，请稍后重试'

@@ -69,6 +69,11 @@ export function getProfile(): UserProfile {
   return read(PROFILE_KEY, DEFAULT_PROFILE)
 }
 
+/** 退出登录时清除账号资料，避免切换账号后继续显示上一个账号的昵称或头像 */
+export function clearProfile(): void {
+  localStorage.removeItem(PROFILE_KEY)
+}
+
 /** 局部更新并持久化用户资料 */
 export function saveProfile(patch: Partial<UserProfile>): UserProfile {
   const next = { ...getProfile(), ...patch }

@@ -84,7 +84,7 @@ const routes: RouteRecordRaw[] = [
     name: 'profile',
     component: () => import('@/views/Profile.vue'),
     // 我的页使用自定义红色头部（用户信息区），不显示 Layout 标题栏
-    meta: { title: '', showTabBar: true },
+    meta: { title: '', showTabBar: true, requiresAuth: true },
   },
   {
     path: '/claim',
@@ -96,6 +96,14 @@ const routes: RouteRecordRaw[] = [
 const router = createRouter({
   history: createWebHistory(),
   routes,
+})
+
+// 退出登录后禁止通过底部导航或浏览器后退重新进入个人页
+router.beforeEach((to) => {
+  if (to.meta.requiresAuth && !localStorage.getItem('rt_token')) {
+    return { path: '/auth', query: { redirect: to.fullPath } }
+  }
+  return true
 })
 
 export default router

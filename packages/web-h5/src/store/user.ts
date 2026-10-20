@@ -8,6 +8,7 @@ import {
   type RegisterParams,
 } from '@/api/auth'
 import { ApiError } from '@/api/request'
+import { clearProfile } from '@/utils/profileStorage'
 
 /** token 存储键（与 api/request.ts 注入 Authorization 时读取的键保持一致） */
 const TOKEN_KEY = 'rt_token'
@@ -79,6 +80,7 @@ export const useUserStore = defineStore('user', {
       this.token = ''
       this.user = null
       localStorage.removeItem(TOKEN_KEY)
+      clearProfile()
     },
   },
 })
