@@ -1,44 +1,44 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import type { RouteRecordRaw } from 'vue-router'
 
-// ????? H5 ??
+// 游客移动端H5 路由
 const routes: RouteRecordRaw[] = [
   {
     path: '/',
     name: 'home',
     component: () => import('@/views/Home.vue'),
-    meta: { title: '??', showTabBar: true },
+    meta: { title: '首页', showTabBar: true },
   },
   {
     path: '/auth',
     name: 'auth',
     component: () => import('@/views/Auth.vue'),
-    // ??/???????????? TabBar??????????
+    // 登录/注册页不显示标题栏与底部 TabBar，采用沉浸式全屏布局
     meta: { title: '', showTabBar: false },
   },
   {
     path: '/guide',
     name: 'guide',
     component: () => import('@/views/Guide.vue'),
-    meta: { title: '????', showTabBar: true },
+    meta: { title: '智能导览', showTabBar: true },
   },
   {
     path: '/guide/navigate',
     name: 'guide-navigate',
     component: () => import('@/views/GuideNav.vue'),
-    meta: { title: '?????', showTabBar: false },
+    meta: { title: '导览进行中', showTabBar: false },
   },
   {
     path: '/guide/recommend',
     name: 'guide-recommend',
     component: () => import('@/views/GuideRecommend.vue'),
-    meta: { title: 'AI ?????', showTabBar: true },
+    meta: { title: 'AI 个性化导览', showTabBar: true },
   },
   {
     path: '/qa',
     name: 'qa',
     component: () => import('@/views/Qa.vue'),
-    // ???????????????? Layout ?????
+    // 问答页使用自定义白底头部，不显示 Layout 红色标题栏
     meta: { title: '', showTabBar: true },
   },
   {
@@ -51,43 +51,42 @@ const routes: RouteRecordRaw[] = [
     path: '/products',
     name: 'products',
     component: () => import('@/views/Products.vue'),
-    meta: { title: '????', showTabBar: true },
+    meta: { title: '文创中心', showTabBar: true },
   },
   {
     path: '/interactive',
     name: 'interactive',
     component: () => import('@/views/Interactive.vue'),
-    // ??????? Hero ????????? Layout ?????
+    // 互动页使用暗色 Hero 自定义头部，不显示 Layout 红色标题栏
     meta: { title: '', showTabBar: true },
   },
   {
     path: '/interactive/scripts',
     name: 'interactive-scripts',
     component: () => import('@/views/ScriptList.vue'),
-    meta: { title: '????', showTabBar: true },
+    meta: { title: '选择剧本', showTabBar: true },
   },
   {
     path: '/interactive/script',
     name: 'interactive-script',
     component: () => import('@/views/ScriptPlay.vue'),
-    // ????????????????????? TabBar
+    // 沉浸式剧本页：全屏深色剧场，不显示标题栏与 TabBar
     meta: { title: '', showTabBar: false },
   },
   {
     path: '/interactive/pose',
     name: 'interactive-pose',
     component: () => import('@/views/PoseInteract.vue'),
-    meta: { title: '????', showTabBar: true },
+    meta: { title: '姿态互动', showTabBar: true },
   },
   {
     path: '/profile',
     name: 'profile',
     component: () => import('@/views/Profile.vue'),
-    // ??????????????????????? Layout ???
+    // 我的页使用自定义红色头部（用户信息区），不显示 Layout 标题栏
     meta: { title: '', showTabBar: true },
   },
   {
-    // ????????????W-T-07??????? /claim?token=xxx?
     path: '/claim',
     name: 'claim',
     component: () => import('@/views/Claim.vue'),
@@ -98,4 +97,5 @@ const router = createRouter({
   history: createWebHistory(),
   routes,
 })
+
 export default router
