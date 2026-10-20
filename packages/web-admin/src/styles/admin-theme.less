@@ -1,0 +1,122 @@
+// ===== 管理后台 Element Plus 主题微调 =====
+// 必须在 element-plus 样式之后引入（见 main.ts），否则覆盖不生效
+@import '@common/style/variables.less';
+
+:root {
+  // 主色对齐红色文旅主题色（革命红 #C41E3A）
+  --el-color-primary: @color-primary;
+  --el-color-primary-light-3: @color-primary-hover;
+  --el-color-primary-light-5: #e35671;
+  --el-color-primary-light-7: #ef8b9e;
+  --el-color-primary-light-8: #f5b3bf;
+  --el-color-primary-light-9: @color-primary-light;
+  --el-color-primary-dark-2: @color-primary-active;
+
+  --el-border-radius-base: @radius-base;
+  --el-border-radius-small: @radius-sm;
+  --el-font-size-base: @font-size-base;
+  --el-box-shadow-light: 0 2px 12px rgba(31, 31, 31, 0.08);
+}
+
+// ===== 表格：更清爽的表头与悬停态 =====
+.el-table {
+  --el-table-border-color: #eef0f3;
+  --el-table-header-bg-color: #fafbfc;
+  --el-table-header-text-color: @color-text-primary;
+  --el-table-row-hover-bg-color: @color-primary-light;
+
+  th.el-table__cell {
+    font-weight: 600;
+  }
+
+  td.el-table__cell {
+    padding: 10px 0;
+  }
+}
+
+// ===== 弹窗：圆角 + 头尾分隔 =====
+.el-dialog {
+  border-radius: @radius-lg;
+  overflow: hidden;
+
+  &__header {
+    margin: 0;
+    padding: 16px 20px;
+    border-bottom: 1px solid #f0f0f2;
+  }
+
+  &__title {
+    font-size: @font-size-lg;
+    font-weight: 600;
+    color: @color-text-primary;
+  }
+
+  &__headerbtn {
+    top: 12px;
+  }
+
+  &__body {
+    padding: 20px;
+  }
+
+  &__footer {
+    padding: 12px 20px;
+    border-top: 1px solid #f0f0f2;
+  }
+}
+
+// ===== 卡片：统一圆角与描边（业务页大量使用 el-card）=====
+.el-card {
+  border-radius: @radius-lg;
+  border-color: #f0f0f2;
+
+  &__header {
+    padding: 14px 20px;
+    font-size: @font-size-base;
+    font-weight: 600;
+    color: @color-text-primary;
+    border-bottom-color: #f5f5f7;
+  }
+}
+
+// ===== 表单 =====
+.el-form-item__label {
+  color: @color-text-regular;
+  font-weight: 500;
+}
+
+// ===== 分页 =====
+.el-pagination.is-background .el-pager li.is-active {
+  font-weight: 600;
+}
+
+// ===== 按钮：默认按钮圆角与轻微阴影 =====
+.el-button {
+  font-weight: 500;
+
+  &--primary {
+    box-shadow: 0 2px 8px rgba(196, 30, 58, 0.18);
+  }
+}
+
+// ===== 标签 =====
+.el-tag {
+  border-radius: @radius-sm;
+  font-weight: 500;
+}
+
+// ===== 滚动条 =====
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(31, 31, 31, 0.18);
+  border-radius: 4px;
+  &:hover {
+    background: rgba(31, 31, 31, 0.32);
+  }
+}
