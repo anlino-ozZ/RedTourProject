@@ -10,6 +10,13 @@ import router from './router'
 import pinia from './store'
 
 const app = createApp(App)
+
+// 全局错误兜底：未捕获的渲染/生命周期错误只记录日志，不向上抛出。
+// 否则 Vue 在 dev 下会把错误 rethrow，打断当前 patch，导致之后路由切换只改 URL、内容区不更新。
+app.config.errorHandler = (err, _instance, info) => {
+  console.error('[admin] 未捕获错误:', info, err)
+}
+
 app.use(pinia)
 app.use(router)
 app.use(ElementPlus)

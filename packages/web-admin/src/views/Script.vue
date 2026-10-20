@@ -45,6 +45,11 @@ async function loadScenicOptions() {
     scenicOptions.value = await getScenicAreas()
   } catch {
     // 错误提示已由拦截器统一弹出
+    return
+  }
+  // 剧本列表接口要求必传 scenicAreaId：超管未选时默认选中第一个景区
+  if (isSuperAdmin.value && !query.scenicAreaId && scenicOptions.value.length > 0) {
+    query.scenicAreaId = scenicOptions.value[0].id
   }
 }
 
@@ -76,11 +81,15 @@ const query = reactive({
 })
 
 async function loadList() {
+  // 后端要求必传 scenicAreaId：未选中景区时不发请求，展示空列表
+  const effectiveScenicAreaId = boundScenicAreaId.value ?? (query.scenicAreaId as number | '')
+  if (!effectiveScenicAreaId) {
+    tableData.value = []
+    return
+  }
   loading.value = true
   try {
-    tableData.value = await getAdminScripts(
-      boundScenicAreaId.value ?? (query.scenicAreaId as number),
-    )
+    tableData.value = await getAdminScripts(effectiveScenicAreaId as number)
   } catch {
     // 错误提示已由拦截器统一弹出
   } finally {
@@ -327,8 +336,9 @@ function formatTime(t?: string) {
 }
 
 // ===== 初始化 =====
-onMounted(() => {
-  loadScenicOptions()
+onMounted(async () => {
+  // 先加载景区选项（超管会默认选中第一个），再查列表
+  await loadScenicOptions()
   loadAchievements()
   loadList()
 })
@@ -353,8 +363,7 @@ onMounted(() => {
         <el-select
           v-if="isSuperAdmin"
           v-model="query.scenicAreaId"
-          placeholder="景区筛选"
-          clearable
+          placeholder="请选择景区"
           filterable
           style="width: 160px"
           @change="loadList"

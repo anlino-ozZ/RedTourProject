@@ -173,7 +173,7 @@ function openEdit(row: AdminRouteItem) {
   form.name = row.name
   form.scenicAreaId = row.scenicAreaId
   form.description = row.description || ''
-  form.spotIds = [...row.spotIds]
+  form.spotIds = toSpotIdList(row.spotIds)
   form.duration = row.duration
   form.difficulty = row.difficulty || 'easy'
   form.status = row.status ?? 1
@@ -262,8 +262,24 @@ function statusTagType(status?: number) {
   return status === 1 ? 'success' : 'info'
 }
 
-function spotNames(spotIds: number[]) {
-  return spotIds.map((id) => spotNameMap.value.get(id) ?? `#${id}`).join(' → ')
+/** 后端 spotIds 可能为空或 JSON 字符串，统一解析成 number[] */
+function toSpotIdList(spotIds: unknown): number[] {
+  if (Array.isArray(spotIds)) return spotIds as number[]
+  if (typeof spotIds === 'string' && spotIds.trim()) {
+    try {
+      const parsed = JSON.parse(spotIds)
+      if (Array.isArray(parsed)) return parsed as number[]
+    } catch {
+      return []
+    }
+  }
+  return []
+}
+
+function spotNames(spotIds: unknown) {
+  const ids = toSpotIdList(spotIds)
+  if (ids.length === 0) return '—'
+  return ids.map((id) => spotNameMap.value.get(id) ?? `#${id}`).join(' → ')
 }
 
 // ===== 初始化 =====

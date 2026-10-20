@@ -8,6 +8,31 @@ import type {
   SpotInfo,
 } from '@red-tour-project/common'
 
+/**
+ * 归一化后端返回值：部分接口（/admin/scripts、/admin/achievements）实际返回分页对象
+ * { list, total }，而前端按数组使用。这里统一取 list，避免调用方遍历时抛
+ * "xxx.filter is not a function" 之类的渲染期错误。
+ */
+function toArray<T>(res: T[] | { list?: T[] } | null | undefined): T[] {
+  if (Array.isArray(res)) return res
+  const list = res?.list
+  return Array.isArray(list) ? list : []
+}
+
+/** 剧本的 roles / nodes / achievements 在库里是 TEXT 列，接口可能返回 JSON 字符串 */
+function parseJsonList<T>(value: unknown): T[] {
+  if (Array.isArray(value)) return value as T[]
+  if (typeof value === 'string' && value.trim()) {
+    try {
+      const parsed = JSON.parse(value)
+      return Array.isArray(parsed) ? (parsed as T[]) : []
+    } catch {
+      return []
+    }
+  }
+  return []
+}
+
 // ===== 管理端用户管理接口（前缀 /admin，接口文档 14.1 节）=====
 
 /** 管理端用户列表项（比 UserInfo 多 status 字段） */
@@ -293,19 +318,27 @@ export interface AdminProductOrderQuery extends PageQuery {
 
 /** 订单列表（分页） */
 export function getAdminProductOrders(params: AdminProductOrderQuery) {
-  return request.get('/admin/product-orders', {
+  return request.get('/admin/orders', {
     params,
   }) as Promise<PageResult<AdminProductOrderItem>>
 }
 
 /** 订单详情 */
 export function getAdminProductOrder(id: number) {
-  return request.get(`/admin/product-orders/${id}`) as Promise<AdminProductOrderItem>
+  return request.get(`/admin/orders/${id}`) as Promise<AdminProductOrderItem>
 }
 
-/** 流转订单状态（pending→contacted→closed） */
-export function updateAdminProductOrderStatus(id: number, status: ProductOrderStatus) {
-  return request.put(`/admin/product-orders/${id}/status`, { status }) as Promise<null>
+/** 流转订单状态（pending→contacted→closed）
+ * 后端为 @RequestParam 接收 status/handleRemark，这里用 params 传参而非 JSON body
+ */
+export function updateAdminProductOrderStatus(
+  id: number,
+  status: ProductOrderStatus,
+  handleRemark?: string,
+) {
+  return request.put(`/admin/orders/${id}/status`, null, {
+    params: { status, handleRemark },
+  }) as Promise<null>
 }
 
 // ===== 管理端文物管理接口（接口文档 14.7 节，表 artifact）=====
@@ -391,9 +424,10 @@ export interface AdminAchievementPayload {
   triggerCondition?: Record<string, unknown> | null
 }
 
-/** 成就列表（全量，不分页） */
-export function getAdminAchievements() {
-  return request.get('/admin/achievements') as Promise<AdminAchievementItem[]>
+/** 成就列表（后端返回分页对象，这里只取 list，页面侧按全量渲染） */
+export async function getAdminAchievements(): Promise<AdminAchievementItem[]> {
+  const res = await request.get('/admin/achievements')
+  return toArray(res as AdminAchievementItem[] | { list?: AdminAchievementItem[] })
 }
 
 /** 新增成就 */
@@ -536,9 +570,18 @@ export interface AdminScriptPayload {
   status: number
 }
 
-/** 剧本列表（scenicAreaId 必传） */
-export function getAdminScripts(scenicAreaId: number) {
-  return request.get('/admin/scripts', { params: { scenicAreaId } }) as Promise<AdminScriptItem[]>
+/** 剧本列表（scenicAreaId 必传）
+ * 后端返回分页对象，这里只取 list；并把 roles/nodes/achievements 统一解析为数组
+ * （TEXT 列可能返回 JSON 字符串，直接 .map 会在渲染期抛错）
+ */
+export async function getAdminScripts(scenicAreaId: number): Promise<AdminScriptItem[]> {
+  const res = await request.get('/admin/scripts', { params: { scenicAreaId } })
+  return toArray(res as AdminScriptItem[] | { list?: AdminScriptItem[] }).map((item) => ({
+    ...item,
+    roles: parseJsonList<ScriptRole>(item.roles),
+    nodes: parseJsonList<ScriptNode>(item.nodes),
+    achievements: parseJsonList<{ id: number }>(item.achievements),
+  }))
 }
 
 /** 新增剧本 */

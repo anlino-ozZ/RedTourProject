@@ -93,6 +93,21 @@ async function handleLogout() {
 function handleCommand(command: string) {
   if (command === 'logout') handleLogout()
 }
+
+// ===== 菜单跳转：显式 push，不依赖 el-menu 内部 router 实现 =====
+// 手动刷新计数：点击「当前已激活」的菜单时，用它改变页面容器 key 强制重挂载（等价于刷新当前页）
+const refreshKey = ref(0)
+
+function handleMenuSelect(index: string) {
+  if (!index) return
+  if (index === route.path) {
+    // 已在当前页：路由不会变化，这里强制重挂载页面容器来重新拉取数据
+    refreshKey.value++
+    return
+  }
+  // 导航被中断（并发跳转、守卫重定向等）会产生 rejected Promise，需捕获避免控制台报错
+  router.push(index).catch(() => {})
+}
 </script>
 
 <template>
@@ -112,8 +127,8 @@ function handleCommand(command: string) {
           :default-active="activeMenu"
           :collapse="isCollapsed"
           :collapse-transition="false"
-          router
           class="admin-layout__menu"
+          @select="handleMenuSelect"
         >
           <el-menu-item v-for="item in visibleMenuItems" :key="item.path" :index="item.path">
             <MenuIcon :name="item.icon || 'grid'" />
@@ -170,11 +185,12 @@ function handleCommand(command: string) {
 
       <main class="admin-layout__main">
         <router-view v-slot="{ Component }">
-          <transition name="admin-page" mode="out-in">
-            <section class="admin-layout__page">
-              <component :is="Component" />
-            </section>
-          </transition>
+          <!-- key 绑定路由：路由变化时整块页面容器重新挂载，避免内容不刷新。
+               用 CSS animation 而非 <transition>：out-in 模式在快速连续切换菜单时
+               会卡在「旧页面已离场、新页面未入场」的中间态，表现为点了没反应。 -->
+          <section :key="`${route.fullPath}#${refreshKey}`" class="admin-layout__page">
+            <component :is="Component" />
+          </section>
         </router-view>
       </main>
     </div>
@@ -425,19 +441,20 @@ function handleCommand(command: string) {
     background: @color-bg-card;
     border-radius: @radius-lg;
     box-shadow: 0 1px 3px rgba(31, 31, 31, 0.06);
+    // 纯 CSS 入场动画：每次 key 变化（切页/手动刷新）容器重建即自动播放，
+    // 不依赖 <transition> 的离场/入场状态机，因此不会出现切换卡死
+    animation: admin-page-in 0.18s ease;
   }
 }
 
-// 页面切换动画
-.admin-page-enter-active,
-.admin-page-leave-active {
-  transition: opacity 0.18s ease, transform 0.18s ease;
-}
-.admin-page-enter-from {
-  opacity: 0;
-  transform: translateY(8px);
-}
-.admin-page-leave-to {
-  opacity: 0;
+@keyframes admin-page-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
 }
 </style>

@@ -166,7 +166,7 @@ function openEdit(row: AdminArtifactItem) {
   form.category = row.category || ''
   form.location = row.location || ''
   form.intro = row.intro || ''
-  form.images = row.images ? [...row.images] : []
+  form.images = toImageList(row.images)
   form.wikiRef = row.wikiRef || ''
   form.status = row.status
   dialogVisible.value = true
@@ -235,13 +235,32 @@ function statusTagType(status: number) {
   return status === 1 ? 'success' : 'info'
 }
 
+/**
+ * 后端 artifact.images 是 TEXT 列，可能返回 JSON 字符串（或单个 URL 字符串）而非数组。
+ * 直接当数组用（.map / 展开）会在渲染期抛错，导致整个页面渲染中断。
+ */
+function toImageList(images: unknown): string[] {
+  if (Array.isArray(images)) return images as string[]
+  if (typeof images === 'string' && images.trim()) {
+    try {
+      const parsed = JSON.parse(images)
+      if (Array.isArray(parsed)) return parsed as string[]
+    } catch {
+      // 非 JSON，按单个图片地址处理
+      return [images]
+    }
+  }
+  return []
+}
+
 function firstImage(row: AdminArtifactItem) {
-  return row.images && row.images.length > 0 ? row.images[0] : ''
+  const list = toImageList(row.images)
+  return list.length > 0 ? list[0] : ''
 }
 
 /** 表格预览大图列表：相对路径需解析为完整地址 */
 function previewImages(row: AdminArtifactItem) {
-  return (row.images || []).map(resolveFileUrl)
+  return toImageList(row.images).map(resolveFileUrl)
 }
 
 // ===== 初始化 =====

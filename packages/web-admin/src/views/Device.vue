@@ -175,6 +175,15 @@ async function handleReboot(d: DeviceStatus) {
   }
 }
 
+/**
+ * 设备心跳字段可能为 null（尚未上报）。渲染期直接 Math.round/toFixed 会抛错，
+ * 统一转成数字兜底。
+ */
+function numOf(value: unknown): number {
+  const n = Number(value)
+  return Number.isFinite(n) ? n : 0
+}
+
 onMounted(() => {
   loadScenicOptions()
   loadList()
@@ -277,17 +286,17 @@ onBeforeUnmount(() => {
             <div class="device-page__metric">
               <span class="device-page__metric-label">CPU 温度</span>
               <el-progress
-                :percentage="Math.min(Math.round(d.cpuTemp), 100)"
-                :color="tempBarColor(Math.min(Math.round(d.cpuTemp), 100))"
+                :percentage="Math.min(Math.round(numOf(d.cpuTemp)), 100)"
+                :color="tempBarColor(Math.min(Math.round(numOf(d.cpuTemp)), 100))"
                 :stroke-width="10"
-                :format="() => `${d.cpuTemp.toFixed(1)}℃`"
+                :format="() => `${numOf(d.cpuTemp).toFixed(1)}℃`"
               />
             </div>
             <div class="device-page__metric">
               <span class="device-page__metric-label">内存占用</span>
               <el-progress
-                :percentage="Math.round(d.memoryUsage)"
-                :color="usageBarColor(Math.round(d.memoryUsage))"
+                :percentage="Math.round(numOf(d.memoryUsage))"
+                :color="usageBarColor(Math.round(numOf(d.memoryUsage)))"
                 :stroke-width="10"
                 :format="(p: number) => `${p}%`"
               />
@@ -295,8 +304,8 @@ onBeforeUnmount(() => {
             <div class="device-page__metric">
               <span class="device-page__metric-label">磁盘占用</span>
               <el-progress
-                :percentage="Math.round(d.diskUsage)"
-                :color="usageBarColor(Math.round(d.diskUsage))"
+                :percentage="Math.round(numOf(d.diskUsage))"
+                :color="usageBarColor(Math.round(numOf(d.diskUsage)))"
                 :stroke-width="10"
                 :format="(p: number) => `${p}%`"
               />

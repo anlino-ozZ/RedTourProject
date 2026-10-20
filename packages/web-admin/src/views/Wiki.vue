@@ -43,6 +43,11 @@ async function loadScenicOptions() {
     scenicOptions.value = await getScenicAreas()
   } catch {
     // 错误提示已由拦截器统一弹出
+    return
+  }
+  // wiki 列表接口要求必传 scenicAreaId：超管未选时默认选中第一个景区
+  if (isSuperAdmin.value && !query.scenicAreaId && scenicOptions.value.length > 0) {
+    query.scenicAreaId = scenicOptions.value[0].id
   }
 }
 
@@ -71,6 +76,13 @@ const query = reactive({
 })
 
 async function loadList() {
+  // 后端要求必传 scenicAreaId：未选中景区时不发请求，展示空列表
+  const effectiveScenicAreaId = (boundScenicAreaId.value ?? query.scenicAreaId) as number | ''
+  if (!effectiveScenicAreaId) {
+    tableData.value = []
+    total.value = 0
+    return
+  }
   loading.value = true
   try {
     const res = await getAdminWikiList({
@@ -78,7 +90,7 @@ async function loadList() {
       pageSize: query.pageSize,
       keyword: query.keyword || undefined,
       compileStatus: query.compileStatus || undefined,
-      scenicAreaId: (boundScenicAreaId.value ?? query.scenicAreaId) as number,
+      scenicAreaId: effectiveScenicAreaId as number,
     })
     tableData.value = res.list
     total.value = res.total
@@ -157,7 +169,7 @@ async function openEdit(row: AdminWikiItem) {
   form.id = row.id
   form.scenicAreaId = row.scenicAreaId
   form.title = row.title
-  form.tags = row.tags ? [...row.tags] : []
+  form.tags = tagList(row.tags)
   // 正文需调详情接口拉取
   try {
     const detail = await getAdminWikiDetail(row.id)
@@ -302,13 +314,32 @@ function formatTime(t: string) {
   return formatDate(t, 'YYYY-MM-DD HH:mm')
 }
 
+/**
+ * wiki_entry.tags 是 JSON 列，接口可能返回 JSON 字符串而非数组。
+ * 直接 .join / 展开会把字符串当字符数组用（渲染期抛错或显示成单个字符标签）。
+ */
+function tagList(tags: unknown): string[] {
+  if (Array.isArray(tags)) return tags as string[]
+  if (typeof tags === 'string' && tags.trim()) {
+    try {
+      const parsed = JSON.parse(tags)
+      return Array.isArray(parsed) ? (parsed as string[]) : []
+    } catch {
+      return []
+    }
+  }
+  return []
+}
+
 function tagsText(row: AdminWikiItem) {
-  return row.tags && row.tags.length > 0 ? row.tags.join('、') : '—'
+  const list = tagList(row.tags)
+  return list.length > 0 ? list.join('、') : '—'
 }
 
 // ===== 初始化 =====
-onMounted(() => {
-  loadScenicOptions()
+onMounted(async () => {
+  // 先加载景区选项（超管会默认选中第一个），再查列表
+  await loadScenicOptions()
   if (boundScenicAreaId.value) {
     query.scenicAreaId = boundScenicAreaId.value
   }
@@ -331,10 +362,10 @@ onMounted(() => {
         <el-select
           v-if="isSuperAdmin"
           v-model="query.scenicAreaId"
-          placeholder="景区筛选"
-          clearable
+          placeholder="请选择景区"
           filterable
           style="width: 170px"
+          @change="handleSearch"
         >
           <el-option v-for="s in scenicOptions" :key="s.id" :label="s.name" :value="s.id" />
         </el-select>
@@ -361,8 +392,8 @@ onMounted(() => {
       </el-table-column>
       <el-table-column label="标签" min-width="150" show-overflow-tooltip>
         <template #default="{ row }">
-          <template v-if="row.tags && row.tags.length > 0">
-            <el-tag v-for="t in row.tags" :key="t" effect="plain" class="wiki-page__tag">
+          <template v-if="tagList(row.tags).length > 0">
+            <el-tag v-for="t in tagList(row.tags)" :key="t" effect="plain" class="wiki-page__tag">
               {{ t }}
             </el-tag>
           </template>
@@ -519,17 +550,22 @@ onMounted(() => {
               {{ formatTime(detail.updatedAt) }}
             </el-descriptions-item>
             <el-descriptions-item label="标签" :span="2">
-              <template v-if="detail.tags && detail.tags.length > 0">
-                <el-tag v-for="t in detail.tags" :key="t" effect="plain" class="wiki-page__tag">
+              <template v-if="tagList(detail.tags).length > 0">
+                <el-tag
+                  v-for="t in tagList(detail.tags)"
+                  :key="t"
+                  effect="plain"
+                  class="wiki-page__tag"
+                >
                   {{ t }}
                 </el-tag>
               </template>
               <span v-else>—</span>
             </el-descriptions-item>
             <el-descriptions-item label="引用关系" :span="2">
-              <template v-if="detail.links && detail.links.length > 0">
+              <template v-if="tagList(detail.links).length > 0">
                 <el-tag
-                  v-for="l in detail.links"
+                  v-for="l in tagList(detail.links)"
                   :key="l"
                   type="success"
                   effect="plain"
