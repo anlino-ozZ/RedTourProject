@@ -69,7 +69,8 @@ export function usePoseStream(opts: UsePoseStreamOptions) {
       const base64 = captureFrame()
       if (!base64) return
       // 消息格式为单一事实入口，如后端契约调整只改这里
-      ws.send(JSON.stringify({ image: base64 }))
+      // 字段名必须是 frame，与后端 PoseRecognizeRequest 及 AI 引擎 pose_stream 契约一致
+      ws.send(JSON.stringify({ frame: base64 }))
     }, interval)
   }
 
