@@ -80,15 +80,7 @@ public class AuthServiceImpl implements AuthService {
         return toResult(user, token);
     }
 
-    @Override
-    public LoginResult me() {
-        SysUser user = UserContext.getCurrentUser();
-        if (user == null) {
-            throw new BusinessException(ResultCode.UNAUTHORIZED);
-        }
-        return toResult(user, null);
-    }
-
+    
     @Override
     public void logout(String token) {
         // 写入 Redis 黑名单，过期时间 = JWT 剩余有效期，这里简单用 2 小时兜底

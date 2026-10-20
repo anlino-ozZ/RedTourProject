@@ -39,15 +39,6 @@ public class AuthController {
     }
 
     /**
-     * 获取当前登录用户信息（需鉴权）
-     * 接口文档：GET /auth/me
-     */
-    @GetMapping("/me")
-    public ApiResponse<LoginResult> me() {
-        return ApiResponse.success(authService.me());
-    }
-
-    /**
      * 登出（需鉴权，任何角色）
      * 前端清除本地 token，同时后端将 token 写入 Redis 黑名单
      * 接口文档：POST /auth/logout
