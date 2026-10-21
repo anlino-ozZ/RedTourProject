@@ -30,7 +30,10 @@ request.interceptors.response.use(
     return Promise.reject(new Error(res.message || '请求失败'))
   },
   (error) => {
-    ElMessage.error(error.message || '网络异常')
+    // 后端 ApiResponse 里带了具体文案（如"语音识别服务暂不可用"），优先展示；
+    // 直接用 error.message 只会弹出 "Request failed with status code 500" 这类无意义提示
+    const message = (error.response?.data?.message as string) || error.message || '网络异常'
+    ElMessage.error(message)
     return Promise.reject(error)
   },
 )

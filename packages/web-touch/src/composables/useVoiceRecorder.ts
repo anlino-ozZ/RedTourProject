@@ -1,4 +1,4 @@
-// 按住说话录音 + 结束静音自动停止（W-T-08，对接 A-11 /voice/stt）
+// 按住说话录音 + 结束静音自动停止（W-T-08，对接 A-11 /api/v1/stt）
 // - MediaRecorder 采集（优先 webm/opus），Web Audio AnalyserNode 实时算 RMS 音量
 // - 检测到说话后，尾部静音连续 1.5s 自动停止；也可松手立即停止
 // - 最长 30s 兜底自动停止，防止异常长录音

@@ -32,20 +32,20 @@ public class GlobalExceptionHandler {
     public ResponseEntity<ApiResponse<Void>> handleBusiness(BusinessException e) {
         log.warn("[业务异常] code={} message={}", e.getCode(), e.getMessage());
         int c = e.getCode();
-        HttpStatus status;
-        if (c == ResultCode.BAD_REQUEST.getCode()) {
-            status = HttpStatus.BAD_REQUEST;
-        } else if (c == ResultCode.UNAUTHORIZED.getCode()) {
-            status = HttpStatus.UNAUTHORIZED;
-        } else if (c == ResultCode.FORBIDDEN.getCode()) {
-            status = HttpStatus.FORBIDDEN;
-        } else if (c == ResultCode.NOT_FOUND.getCode()) {
-            status = HttpStatus.NOT_FOUND;
-        } else if (c == ResultCode.CONFLICT.getCode()) {
-            status = HttpStatus.CONFLICT;
-        } else {
-            status = HttpStatus.INTERNAL_SERVER_ERROR;
-        }
+        // 必须按业务码映射到对应 HTTP 语义：否则 503（如 STT 模型不可用）、
+        // 413（音频过大）、422（未识别到语音）都会被兜底成 500，前端只看到"服务异常"，
+        // 无法区分"依赖没装好"和"代码出错"。
+        HttpStatus status = switch (c) {
+            case 400 -> HttpStatus.BAD_REQUEST;
+            case 401 -> HttpStatus.UNAUTHORIZED;
+            case 403 -> HttpStatus.FORBIDDEN;
+            case 404 -> HttpStatus.NOT_FOUND;
+            case 409 -> HttpStatus.CONFLICT;
+            case 413 -> HttpStatus.PAYLOAD_TOO_LARGE;
+            case 422 -> HttpStatus.UNPROCESSABLE_ENTITY;
+            case 503 -> HttpStatus.SERVICE_UNAVAILABLE;
+            default -> HttpStatus.INTERNAL_SERVER_ERROR;
+        };
         return ResponseEntity.status(status).body(ApiResponse.error(e.getCode(), e.getMessage()));
     }
 

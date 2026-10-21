@@ -167,6 +167,13 @@ class SpeechTranscriber:
 
     @staticmethod
     def _create_local_model() -> Any:
+        # 必须在 import faster_whisper（内部会 import ctranslate2）之前设置：
+        # OMP/MKL 在库初始化时就按线程数预分配内存池，线程数过多在内存紧张的机器上
+        # 会直接抛 "mkl_malloc: failed to allocate memory"，最终表现为 /engine/stt 503。
+        cpu_threads = SpeechTranscriber._env_positive_int("STT_CPU_THREADS", 1)
+        os.environ.setdefault("OMP_NUM_THREADS", str(cpu_threads))
+        os.environ.setdefault("MKL_NUM_THREADS", str(cpu_threads))
+
         try:
             from faster_whisper import WhisperModel
         except ImportError as exc:
@@ -187,6 +194,7 @@ class SpeechTranscriber:
                 model_name,
                 device=device,
                 compute_type=compute_type,
+                cpu_threads=cpu_threads,
                 download_root=download_root,
                 local_files_only=local_only,
             )

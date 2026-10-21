@@ -44,6 +44,8 @@ export function askQuestion(data: AskRequest) {
 
 /**
  * 语音识别 STT（A-11）：multipart 上传录音，返回转写文本
+ * 后端路径为 /api/v1/stt（SttController），与游客端 H5 共用；
+ * 不能写成 /voice/stt——该路径不在鉴权白名单内，触摸屏无 token 会被 AuthInterceptor 拦成 401。
  * @param audio 录音 Blob（MediaRecorder 输出，webm/opus 等浏览器原生格式）
  * @param filename 文件名后缀需与实际编码一致，后端据此解析容器格式
  */
@@ -51,7 +53,7 @@ export function speechToText(audio: Blob, filename = 'audio.webm') {
   const form = new FormData()
   form.append('audio', audio, filename)
   // 不手动设置 Content-Type：浏览器发送 FormData 时自动补 multipart boundary
-  return request.post<unknown, SttResult>('/voice/stt', form, {
+  return request.post<unknown, SttResult>('/stt', form, {
     timeout: SHORT_REQUEST_TIMEOUT_MS,
   })
 }
