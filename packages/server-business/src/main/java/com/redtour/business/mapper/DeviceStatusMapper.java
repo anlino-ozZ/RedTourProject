@@ -40,14 +40,18 @@ public interface DeviceStatusMapper {
 
     /**
      * 按景区查询设备状态列表；scenicAreaId 为 null 时返回全部（super_admin 全量视角）。
-     * online 不直接取库里存值，而是按 last_heartbeat 是否超过 2 分钟实时判定，
+     * online 不直接取库里存值，而是按 last_heartbeat 是否在最近 2 分钟内实时判定，
      * 避免设备断电后仍显示在线（前端 DeviceStatus.online 注释同此口径）。
+     *
+     * 注意：注解 SQL 走 MyBatis &lt;script&gt; 解析，比较符需转义（AnalyticsMapper 同），
+     * 这里改用 BETWEEN 区间判断，彻底避免 &lt; &gt; 字符。
+     * last_heartbeat 为 NULL 时 IFNULL 兜底成 1970 年，差值远超 2 分钟，自然判为离线。
      */
     @Select("""
             <script>
             SELECT device_id, scenic_area_id,
-                   IF(last_heartbeat IS NOT NULL
-                      AND last_heartbeat >= DATE_SUB(NOW(), INTERVAL 2 MINUTE), 1, 0) AS online,
+                   IF(TIMESTAMPDIFF(MINUTE, IFNULL(last_heartbeat, '1970-01-01 00:00:00'), NOW())
+                      BETWEEN 0 AND 2, 1, 0) AS online,
                    cpu_temp, memory_usage, disk_usage,
                    hailo_status, camera_connected, speaker_connected, last_heartbeat
             FROM device_status

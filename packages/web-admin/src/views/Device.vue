@@ -6,6 +6,7 @@
 import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { RedButton } from '@red-tour-project/common'
+import UploadFile from '@/components/UploadFile.vue'
 import {
   getDeviceStatus,
   playDeviceAudio,
@@ -163,55 +164,78 @@ function refreshTimeText() {
 const pendingCmd = ref<string | null>(null)
 
 /** 指定设备的某指令是否正在下发 */
-function isPending(d: DeviceStatus, cmd: string): boolean {
-  return pendingCmd.value === `${d.deviceId}:${cmd}`
+function isPendingById(deviceId: string, cmd: string): boolean {
+  return pendingCmd.value === `${deviceId}:${cmd}`
 }
 
-/** 统一下发：置 loading → 调接口 → 成功提示；失败提示由 axios 拦截器统一弹出 */
+/** 指定设备的某指令是否正在下发（卡片按钮用） */
+function isPending(d: DeviceStatus, cmd: string): boolean {
+  return isPendingById(d.deviceId, cmd)
+}
+
+/**
+ * 统一下发：置 loading → 调接口 → 成功提示；失败提示由 axios 拦截器统一弹出
+ * @returns 是否成功送达硬件
+ */
 async function runCommand(
-  d: DeviceStatus,
+  deviceId: string,
   cmd: string,
   fn: () => Promise<DeviceCommandResult>,
   okMsg: string,
-) {
-  pendingCmd.value = `${d.deviceId}:${cmd}`
+): Promise<boolean> {
+  pendingCmd.value = `${deviceId}:${cmd}`
   try {
     const res = await fn()
     if (res.sent) {
       ElMessage.success(okMsg)
+      return true
     }
+    return false
   } catch {
     // 503 设备离线、5002 硬件通信失败等提示已由拦截器统一弹出
+    return false
   } finally {
     pendingCmd.value = null
   }
 }
 
-/** 播放讲解音频：输入音频地址后下发 play_audio */
-async function handlePlay(d: DeviceStatus) {
-  let audioUrl = ''
-  try {
-    const { value } = await ElMessageBox.prompt(
-      '输入讲解音频地址：相对路径（如 /audio/spots/1.mp3、/audio/tts/xxx.wav）或完整 URL，' +
-        '由树莓派下载缓存后播放。',
-      '播放讲解音频',
-      {
-        confirmButtonText: '下发播放指令',
-        cancelButtonText: '取消',
-        inputPlaceholder: '/audio/spots/1.mp3',
-        inputValidator: (v: string) => (v && v.trim() ? true : '音频地址不能为空'),
-      },
-    )
-    audioUrl = String(value).trim()
-  } catch {
+// ===== 播放音频对话框（上传音频或填写地址）=====
+const playDialog = reactive({
+  visible: false,
+  deviceId: '',
+  scenicAreaId: undefined as number | undefined,
+  audioUrl: '',
+})
+
+/** 打开播放对话框：音频归属景区取设备绑定的景区（上传接口要求必传 scenicAreaId） */
+function openPlayDialog(d: DeviceStatus) {
+  playDialog.deviceId = d.deviceId
+  playDialog.scenicAreaId = d.scenicAreaId
+  playDialog.audioUrl = ''
+  playDialog.visible = true
+}
+
+/** 下发播放指令：上传或手填得到 audioUrl，下发成功才关闭对话框 */
+async function submitPlay() {
+  const url = playDialog.audioUrl.trim()
+  if (!url) {
+    ElMessage.warning('请先上传音频文件，或填写音频地址')
     return
   }
-  await runCommand(d, 'play', () => playDeviceAudio(d.deviceId, audioUrl), '播放指令已下发')
+  const sent = await runCommand(
+    playDialog.deviceId,
+    'play',
+    () => playDeviceAudio(playDialog.deviceId, url),
+    '播放指令已下发',
+  )
+  if (sent) {
+    playDialog.visible = false
+  }
 }
 
 /** 停止播放：下发 stop_audio */
 async function handleStop(d: DeviceStatus) {
-  await runCommand(d, 'stop', () => stopDeviceAudio(d.deviceId), '停止播放指令已下发')
+  await runCommand(d.deviceId, 'stop', () => stopDeviceAudio(d.deviceId), '停止播放指令已下发')
 }
 
 /** 设置音量：输入 0-100 后下发 set_volume */
@@ -230,7 +254,7 @@ async function handleVolume(d: DeviceStatus) {
     return
   }
   await runCommand(
-    d,
+    d.deviceId,
     'volume',
     () => setDeviceVolume(d.deviceId, volume),
     `音量已设为 ${volume}`,
@@ -425,7 +449,7 @@ onBeforeUnmount(() => {
                 size="small"
                 :disabled="!d.online"
                 :loading="isPending(d, 'play')"
-                @click="handlePlay(d)"
+                @click="openPlayDialog(d)"
               >
                 播放音频
               </el-button>
@@ -464,6 +488,49 @@ onBeforeUnmount(() => {
         </el-card>
       </el-col>
     </el-row>
+
+    <!-- 播放讲解音频：上传音频（走 /uploads/**）或填写地址 -->
+    <el-dialog
+      v-model="playDialog.visible"
+      title="播放讲解音频"
+      width="560px"
+      append-to-body
+      destroy-on-close
+    >
+      <div class="device-page__dialog-body">
+        <div class="device-page__field">
+          <span class="device-page__field-label">上传音频</span>
+          <UploadFile
+            v-model="playDialog.audioUrl"
+            type="audio"
+            :scenic-area-id="playDialog.scenicAreaId"
+          />
+        </div>
+        <div class="device-page__field">
+          <span class="device-page__field-label">或填写音频地址</span>
+          <el-input
+            v-model="playDialog.audioUrl"
+            placeholder="/uploads/scenic_1/audio/xxx.mp3 或完整 http(s) URL"
+            clearable
+          />
+        </div>
+        <div class="device-page__hint">
+          音频将下发至设备 <b>{{ playDialog.deviceId }}</b>
+          ，由树莓派下载缓存后播放；支持 mp3/wav，单个不超过 50MB。
+        </div>
+      </div>
+      <template #footer>
+        <el-button size="small" @click="playDialog.visible = false">取消</el-button>
+        <el-button
+          type="primary"
+          size="small"
+          :loading="isPendingById(playDialog.deviceId, 'play')"
+          @click="submitPlay"
+        >
+          下发播放指令
+        </el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -607,6 +674,30 @@ onBeforeUnmount(() => {
     flex-wrap: wrap;
     justify-content: flex-end;
     gap: @spacing-xs;
+  }
+
+  &__dialog-body {
+    display: flex;
+    flex-direction: column;
+    gap: @spacing-md;
+  }
+
+  &__field-label {
+    display: block;
+    margin-bottom: @spacing-xs;
+    font-size: @font-size-sm;
+    color: @color-text-regular;
+  }
+
+  &__hint {
+    font-size: @font-size-sm;
+    color: @color-text-secondary;
+    line-height: 1.6;
+
+    b {
+      font-family: Consolas, Monaco, 'Courier New', monospace;
+      color: @color-text-primary;
+    }
   }
 
   &__heartbeat {
