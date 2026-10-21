@@ -7,18 +7,6 @@
 # 本地使用时：复制同目录模板 application-dev.example.yml 到 packages/server-business/config/application-dev.yml
 #            并填入自己的真实值即可，无需改动本文件。
 mysql:
-<<<<<<< HEAD
-  host: localhost
-  port: 3306
-  database: red_tour
-  username: root
-  password: '200631612'
-
-redis:
-  host: localhost
-  port: 6379
-  database: 0
-=======
   host: ${MYSQL_HOST:localhost}
   port: ${MYSQL_PORT:3306}
   database: ${MYSQL_DATABASE:red_tour}
@@ -30,7 +18,6 @@ redis:
   port: ${REDIS_PORT:6379}
   password: ${REDIS_PASSWORD:}
   database: ${REDIS_DATABASE:0}
->>>>>>> origin/dev
 
 hardware:
   tcp:
