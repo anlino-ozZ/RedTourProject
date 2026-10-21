@@ -20,6 +20,10 @@ public class PoseWebSocketConfig implements WebSocketConfigurer {
     private final PoseWebSocketProxyHandler poseWebSocketProxyHandler;
     @Override
     public void registerWebSocketHandlers(WebSocketHandlerRegistry registry) {
-        registry.addHandler(poseWebSocketProxyHandler, "/api/v1/pose/stream");
+        // 必须显式放开跨域：WebSocket 握手不走 CorsConfig（那是 HTTP CORS），
+        // Spring 默认只放行同源握手，前端跑在 Vite(5173/5174) 而后端在 8000，
+        // 未放开时握手会被 403 拒绝，前端表现为"连接断开 · 重连中"。
+        registry.addHandler(poseWebSocketProxyHandler, "/api/v1/pose/stream")
+                .setAllowedOriginPatterns("*");
     }
 }
