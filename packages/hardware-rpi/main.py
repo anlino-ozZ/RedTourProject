@@ -3,7 +3,8 @@ hardware-rpi 入口
 =================
 青年红色筑梦之旅 - 红色文旅智能导览系统 树莓派硬件控制
 树莓派5（BCM2712）外设驱动：串口通信、音频播放、GPIO 控制，
-并通过 TCP 服务（:9000）接收业务后端指令：播放讲解音频 / 音量 / 重启等。
+并通过 TCP 服务（:9000）接收业务后端指令：播放讲解音频 / 音量 / 重启等，
+同时按固定间隔向业务后端上报设备心跳（在线状态与各硬件指标）。
 
 注意：RPi.GPIO 仅在树莓派环境可用，开发机导入时做 try-except 降级。
 配置项从环境变量读取（见 .env.example），均有默认值，开发机可直接运行。
@@ -26,6 +27,7 @@ from drivers.serial_ctrl import SerialCtrl
 from drivers.audio_ctrl import AudioCtrl
 from drivers.gpio_ctrl import GpioCtrl
 from drivers.tcp_server import HardwareTcpServer
+from drivers.heartbeat import HeartbeatReporter
 
 # ---- 配置（环境变量优先，默认值保证开发机可启动）----
 SERIAL_PORT = os.getenv("SERIAL_PORT", "/dev/ttyAMA0")
@@ -41,13 +43,17 @@ TCP_PORT = int(os.getenv("TCP_PORT", "9000"))
 # 业务后端根地址（play_audio 相对路径音频的下载源）
 BUSINESS_BASE_URL = os.getenv("BUSINESS_BASE_URL", "http://localhost:8000")
 AUDIO_CACHE_DIR = os.getenv("AUDIO_CACHE_DIR", "audio_cache")
+# 设备心跳上报：设备标识需与 device_status 表 / 管理端设备列表一致
+DEVICE_ID = os.getenv("DEVICE_ID", "rpi-001")
+SCENIC_AREA_ID = int(os.getenv("SCENIC_AREA_ID", "1"))
+HEARTBEAT_INTERVAL = float(os.getenv("HEARTBEAT_INTERVAL", "30"))
 
 # 运行标志，用于优雅退出
 _running = True
 
 
-def _init_drivers() -> tuple[SerialCtrl, AudioCtrl, GpioCtrl, HardwareTcpServer]:
-    """初始化各硬件驱动与 TCP 服务"""
+def _init_drivers() -> tuple[SerialCtrl, AudioCtrl, GpioCtrl, HardwareTcpServer, HeartbeatReporter]:
+    """初始化各硬件驱动、TCP 服务与心跳上报"""
     serial = SerialCtrl(port=SERIAL_PORT, baudrate=BAUDRATE)
     audio = AudioCtrl(device=AUDIO_DEVICE, volume=AUDIO_VOLUME)
     gpio = GpioCtrl(led_pin=GPIO_LED_PIN, btn_pin=GPIO_BTN_PIN)
@@ -58,13 +64,20 @@ def _init_drivers() -> tuple[SerialCtrl, AudioCtrl, GpioCtrl, HardwareTcpServer]
         business_base_url=BUSINESS_BASE_URL,
         audio_cache_dir=AUDIO_CACHE_DIR,
     )
+    heartbeat = HeartbeatReporter(
+        business_base_url=BUSINESS_BASE_URL,
+        device_id=DEVICE_ID,
+        scenic_area_id=SCENIC_AREA_ID,
+        interval=HEARTBEAT_INTERVAL,
+    )
 
-    # 打开串口、配置 GPIO、启动 TCP 监听
+    # 打开串口、配置 GPIO、启动 TCP 监听与心跳上报
     serial.open()
     gpio.setup()
     tcp_server.start()
+    heartbeat.start()
 
-    return serial, audio, gpio, tcp_server
+    return serial, audio, gpio, tcp_server, heartbeat
 
 
 def _cleanup(
@@ -72,8 +85,10 @@ def _cleanup(
     audio: AudioCtrl,
     gpio: GpioCtrl,
     tcp_server: HardwareTcpServer,
+    heartbeat: HeartbeatReporter,
 ) -> None:
-    """资源清理：停止 TCP、关闭串口、停止音频、复位 GPIO"""
+    """资源清理：停止心跳与 TCP、关闭串口、停止音频、复位 GPIO"""
+    heartbeat.stop()
     tcp_server.stop()
     serial.close()
     audio.stop()
@@ -90,7 +105,7 @@ def _signal_handler(signum, frame) -> None:
 
 def main() -> None:
     """主循环：轮询硬件状态；讲解音频等事件由 TCP 服务线程驱动"""
-    serial, audio, gpio, tcp_server = _init_drivers()
+    serial, audio, gpio, tcp_server, heartbeat = _init_drivers()
 
     # 注册信号处理
     signal.signal(signal.SIGINT, _signal_handler)
@@ -119,7 +134,7 @@ def main() -> None:
 
         time.sleep(LOOP_INTERVAL)
 
-    _cleanup(serial, audio, gpio, tcp_server)
+    _cleanup(serial, audio, gpio, tcp_server, heartbeat)
 
 
 if __name__ == "__main__":

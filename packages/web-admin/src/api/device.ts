@@ -29,6 +29,16 @@ export interface DeviceRebootResult {
   sent: boolean
 }
 
+/** 硬件指令下发结果（播放 / 停止 / 音量通用） */
+export interface DeviceCommandResult {
+  deviceId: string
+  /** 指令名：play_audio / stop_audio / set_volume */
+  command: string
+  sent: boolean
+  /** 硬件返回的原始响应，便于排查 */
+  response: string
+}
+
 /**
  * 设备状态列表
  * @param scenicAreaId 景区 ID；普管必传（管辖景区），超管不传=全部景区
@@ -44,4 +54,24 @@ export function getDeviceStatus(scenicAreaId?: number) {
  */
 export function rebootDevice(deviceId: string) {
   return request.post(`/devices/${deviceId}/reboot`) as Promise<DeviceRebootResult>
+}
+
+/**
+ * 下发播放讲解音频指令
+ * @param audioUrl 相对路径（如 /audio/spots/1.mp3）或完整 http(s) URL
+ */
+export function playDeviceAudio(deviceId: string, audioUrl: string) {
+  return request.post(`/devices/${deviceId}/audio/play`, {
+    audioUrl,
+  }) as Promise<DeviceCommandResult>
+}
+
+/** 下发停止播放指令 */
+export function stopDeviceAudio(deviceId: string) {
+  return request.post(`/devices/${deviceId}/audio/stop`) as Promise<DeviceCommandResult>
+}
+
+/** 下发音量设置指令（0-100） */
+export function setDeviceVolume(deviceId: string, volume: number) {
+  return request.post(`/devices/${deviceId}/volume`, { volume }) as Promise<DeviceCommandResult>
 }

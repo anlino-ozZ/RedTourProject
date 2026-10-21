@@ -1,11 +1,20 @@
 <script setup lang="ts">
 // PC管理后台 设备监控页（接口文档 第十二章，PRD 5.8）
 // 树莓派 5 + Hailo8L 边缘节点运行状态：CPU 温度/内存/磁盘/Hailo/摄像头/音箱 + 心跳
-// 设备每 30 秒上报心跳，超过 2 分钟未上报判定离线；超管可远程重启
+// 设备每 30 秒上报心跳，超过 2 分钟未上报判定离线
+// 操作：管理员可下发播放讲解音频 / 停止播放 / 音量指令，超管可远程重启
 import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { RedButton } from '@red-tour-project/common'
-import { getDeviceStatus, rebootDevice, type DeviceStatus } from '@/api/device'
+import {
+  getDeviceStatus,
+  playDeviceAudio,
+  rebootDevice,
+  setDeviceVolume,
+  stopDeviceAudio,
+  type DeviceCommandResult,
+  type DeviceStatus,
+} from '@/api/device'
 import { getScenicAreas } from '@/api'
 import { useUserStore } from '@/store'
 import type { ScenicAreaInfo } from '@red-tour-project/common'
@@ -147,6 +156,85 @@ function refreshTimeText() {
   return `${String(lastRefreshAt.value.getHours()).padStart(2, '0')}:${String(
     lastRefreshAt.value.getMinutes(),
   ).padStart(2, '0')}:${String(lastRefreshAt.value.getSeconds()).padStart(2, '0')}`
+}
+
+// ===== 硬件指令下发（播放 / 停止 / 音量）=====
+/** 正在下发中的指令，形如 `${deviceId}:${cmd}`，用于按钮 loading 互斥 */
+const pendingCmd = ref<string | null>(null)
+
+/** 指定设备的某指令是否正在下发 */
+function isPending(d: DeviceStatus, cmd: string): boolean {
+  return pendingCmd.value === `${d.deviceId}:${cmd}`
+}
+
+/** 统一下发：置 loading → 调接口 → 成功提示；失败提示由 axios 拦截器统一弹出 */
+async function runCommand(
+  d: DeviceStatus,
+  cmd: string,
+  fn: () => Promise<DeviceCommandResult>,
+  okMsg: string,
+) {
+  pendingCmd.value = `${d.deviceId}:${cmd}`
+  try {
+    const res = await fn()
+    if (res.sent) {
+      ElMessage.success(okMsg)
+    }
+  } catch {
+    // 503 设备离线、5002 硬件通信失败等提示已由拦截器统一弹出
+  } finally {
+    pendingCmd.value = null
+  }
+}
+
+/** 播放讲解音频：输入音频地址后下发 play_audio */
+async function handlePlay(d: DeviceStatus) {
+  let audioUrl = ''
+  try {
+    const { value } = await ElMessageBox.prompt(
+      '输入讲解音频地址：相对路径（如 /audio/spots/1.mp3、/audio/tts/xxx.wav）或完整 URL，' +
+        '由树莓派下载缓存后播放。',
+      '播放讲解音频',
+      {
+        confirmButtonText: '下发播放指令',
+        cancelButtonText: '取消',
+        inputPlaceholder: '/audio/spots/1.mp3',
+        inputValidator: (v: string) => (v && v.trim() ? true : '音频地址不能为空'),
+      },
+    )
+    audioUrl = String(value).trim()
+  } catch {
+    return
+  }
+  await runCommand(d, 'play', () => playDeviceAudio(d.deviceId, audioUrl), '播放指令已下发')
+}
+
+/** 停止播放：下发 stop_audio */
+async function handleStop(d: DeviceStatus) {
+  await runCommand(d, 'stop', () => stopDeviceAudio(d.deviceId), '停止播放指令已下发')
+}
+
+/** 设置音量：输入 0-100 后下发 set_volume */
+async function handleVolume(d: DeviceStatus) {
+  let volume = 80
+  try {
+    const { value } = await ElMessageBox.prompt('输入设备音量（0-100）', '设置音量', {
+      confirmButtonText: '下发设置指令',
+      cancelButtonText: '取消',
+      inputValue: '80',
+      inputPattern: /^(?:100|[1-9]?\d)$/,
+      inputErrorMessage: '请输入 0-100 的整数',
+    })
+    volume = Number(value)
+  } catch {
+    return
+  }
+  await runCommand(
+    d,
+    'volume',
+    () => setDeviceVolume(d.deviceId, volume),
+    `音量已设为 ${volume}`,
+  )
 }
 
 // ===== 远程重启 =====
@@ -330,17 +418,48 @@ onBeforeUnmount(() => {
             <span class="device-page__heartbeat" :class="{ 'is-stale': heartbeatStale(d) }">
               心跳：{{ heartbeatText(d) }}
             </span>
-            <el-button
-              v-if="isSuperAdmin"
-              link
-              type="warning"
-              size="small"
-              :disabled="!d.online"
-              :loading="rebootingId === d.deviceId"
-              @click="handleReboot(d)"
-            >
-              远程重启
-            </el-button>
+            <div class="device-page__actions">
+              <el-button
+                link
+                type="primary"
+                size="small"
+                :disabled="!d.online"
+                :loading="isPending(d, 'play')"
+                @click="handlePlay(d)"
+              >
+                播放音频
+              </el-button>
+              <el-button
+                link
+                size="small"
+                :disabled="!d.online"
+                :loading="isPending(d, 'stop')"
+                @click="handleStop(d)"
+              >
+                停止播放
+              </el-button>
+              <el-button
+                link
+                type="success"
+                size="small"
+                :disabled="!d.online"
+                :loading="isPending(d, 'volume')"
+                @click="handleVolume(d)"
+              >
+                音量
+              </el-button>
+              <el-button
+                v-if="isSuperAdmin"
+                link
+                type="warning"
+                size="small"
+                :disabled="!d.online"
+                :loading="rebootingId === d.deviceId"
+                @click="handleReboot(d)"
+              >
+                远程重启
+              </el-button>
+            </div>
           </div>
         </el-card>
       </el-col>
@@ -483,7 +602,15 @@ onBeforeUnmount(() => {
     border-top: 1px solid @color-border;
   }
 
+  &__actions {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: @spacing-xs;
+  }
+
   &__heartbeat {
+    flex-shrink: 0;
     font-size: @font-size-sm;
     color: @color-text-secondary;
 

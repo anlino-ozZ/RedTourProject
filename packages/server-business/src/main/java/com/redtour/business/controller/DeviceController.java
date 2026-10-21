@@ -2,9 +2,12 @@ package com.redtour.business.controller;
 
 import com.redtour.business.annotation.RequireRole;
 import com.redtour.business.common.ApiResponse;
+import com.redtour.business.dto.DeviceAudioPlayRequest;
+import com.redtour.business.dto.DeviceCommandResult;
 import com.redtour.business.dto.DeviceHeartbeatRequest;
 import com.redtour.business.dto.DeviceHeartbeatResult;
 import com.redtour.business.dto.DeviceStatusResult;
+import com.redtour.business.dto.DeviceVolumeRequest;
 import com.redtour.business.service.DeviceService;
 import jakarta.validation.ConstraintViolationException;
 import jakarta.validation.Valid;
@@ -58,6 +61,32 @@ public class DeviceController {
             @PathVariable @Pattern(regexp = "^[\\w-]+$", message = "设备ID格式非法") String deviceId) {
         deviceService.reboot(deviceId);
         return ApiResponse.success(Map.of("deviceId", deviceId, "sent", Boolean.TRUE));
+    }
+
+    /** 下发播放讲解音频指令。 */
+    @PostMapping("/{deviceId}/audio/play")
+    @RequireRole({"super_admin", "admin"})
+    public ApiResponse<DeviceCommandResult> playAudio(
+            @PathVariable @Pattern(regexp = "^[\\w-]+$", message = "设备ID格式非法") String deviceId,
+            @Valid @RequestBody DeviceAudioPlayRequest request) {
+        return ApiResponse.success(deviceService.playAudio(deviceId, request));
+    }
+
+    /** 下发停止播放指令。 */
+    @PostMapping("/{deviceId}/audio/stop")
+    @RequireRole({"super_admin", "admin"})
+    public ApiResponse<DeviceCommandResult> stopAudio(
+            @PathVariable @Pattern(regexp = "^[\\w-]+$", message = "设备ID格式非法") String deviceId) {
+        return ApiResponse.success(deviceService.stopAudio(deviceId));
+    }
+
+    /** 下发音量设置指令（0-100）。 */
+    @PostMapping("/{deviceId}/volume")
+    @RequireRole({"super_admin", "admin"})
+    public ApiResponse<DeviceCommandResult> setVolume(
+            @PathVariable @Pattern(regexp = "^[\\w-]+$", message = "设备ID格式非法") String deviceId,
+            @Valid @RequestBody DeviceVolumeRequest request) {
+        return ApiResponse.success(deviceService.setVolume(deviceId, request));
     }
 
     @ExceptionHandler(ConstraintViolationException.class)
