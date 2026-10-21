@@ -1,18 +1,25 @@
-# 开发环境配置（按实际 MySQL / Redis / 树莓派地址修改）
+# 开发环境配置模板
+# 说明：本文件随仓库提交，**不得写入任何密码 / 内网 IP**。
+# 所有与环境相关的敏感项均通过占位符读取，优先级如下：
+#   1) 运行目录下的 config/application-dev.yml（本地私有文件，已 gitignore，推荐）
+#   2) 环境变量：MYSQL_PASSWORD、REDIS_HOST、HARDWARE_TCP_HOST ...
+#   3) 本文件中的默认值
+# 本地使用时：复制同目录模板 application-dev.example.yml 到 packages/server-business/config/application-dev.yml
+#            并填入自己的真实值即可，无需改动本文件。
 mysql:
-  host: localhost
-  port: 3306
-  database: red_tour
-  username: root
-  password: "Zal13715002181,"
+  host: ${MYSQL_HOST:localhost}
+  port: ${MYSQL_PORT:3306}
+  database: ${MYSQL_DATABASE:red_tour}
+  username: ${MYSQL_USERNAME:root}
+  password: ${MYSQL_PASSWORD:}
 
 redis:
-  # 本机 Redis（Docker Desktop 映射 6379）；若部署到虚拟机环境请改回对应内网 IP
-  host: localhost
-  port: 6379
-  database: 0
+  host: ${REDIS_HOST:localhost}
+  port: ${REDIS_PORT:6379}
+  password: ${REDIS_PASSWORD:}
+  database: ${REDIS_DATABASE:0}
 
 hardware:
   tcp:
-    host: 127.0.0.1
-    port: 9000
+    host: ${HARDWARE_TCP_HOST:127.0.0.1}
+    port: ${HARDWARE_TCP_PORT:9000}

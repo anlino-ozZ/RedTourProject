@@ -73,3 +73,11 @@ packages/*/package-lock.json
 public-common/package-lock.json
 # pnpm lock
 pnpm-lock.yaml
+
+# ===== 后端本地私有配置（含数据库密码 / 内网 IP，禁止入库）=====
+packages/server-business/config/*
+!packages/server-business/config/*application-dev.example.yml
+
+# ===== 后端运行产物：上传文件与日志 =====
+packages/server-business/uploads/
+packages/server-business/logs/
