@@ -67,12 +67,18 @@ public interface AnalyticsMapper {
      * sort_weight 别名 ask_count 映射到 PopularQuestion.askCount。
      */
     @Select("""
+            <script>
             SELECT id, question, sort_weight AS ask_count
             FROM recommendation_question
+            <if test="scenicAreaId != null">
+                WHERE scenic_area_id = #{scenicAreaId}
+            </if>
             ORDER BY sort_weight DESC, id
             LIMIT #{limit}
+            </script>
             """)
-    List<PopularQuestion> findTopQuestions(@Param("limit") int limit);
+    List<PopularQuestion> findTopQuestions(@Param("scenicAreaId") Long scenicAreaId,
+                                           @Param("limit") int limit);
 
     /**
      * 产品按 click_count 倒序（带景区隔离）。

@@ -104,6 +104,12 @@ public class UploadServiceImpl implements UploadService {
                 continue;
             }
             String relative = url.substring(URL_PREFIX.length());
+            // URL 结构固定为 /uploads/{type}/{scenicAreaId}/{filename}，先校验景区归属再删
+            String[] parts = relative.split("/");
+            if (parts.length != 3 || !authorizeDeleteArea(parts[1])) {
+                log.warn("[上传] 拒绝越权删除（非本景区文件）: {}", url);
+                continue;
+            }
             Path target = base.resolve(relative).normalize();
             // 防穿越：目标必须仍在上传根目录内
             if (!target.startsWith(base)) {
@@ -116,6 +122,27 @@ public class UploadServiceImpl implements UploadService {
                 log.warn("[上传] 删除文件失败 {}", target, e);
             }
         }
+    }
+
+    /** 删除前校验 URL 中的景区目录归属：admin 只能删本景区文件，super_admin 放行。 */
+    private boolean authorizeDeleteArea(String areaIdPart) {
+        SysUser current = UserContext.getCurrentUser();
+        if (current == null) {
+            throw new BusinessException(ResultCode.UNAUTHORIZED);
+        }
+        Long areaId;
+        try {
+            areaId = Long.parseLong(areaIdPart);
+        } catch (NumberFormatException e) {
+            return false;
+        }
+        if ("super_admin".equals(current.getRole())) {
+            return true;
+        }
+        if (!"admin".equals(current.getRole())) {
+            return false;
+        }
+        return areaId.equals(current.getScenicAreaId());
     }
 
     private long maxBytesFor(String type) {

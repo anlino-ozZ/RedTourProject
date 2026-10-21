@@ -39,12 +39,14 @@ public class ScenicAreaServiceImpl implements ScenicAreaService {
         int offset = (int) offsetValue;
         String normalizedName = StringUtils.hasText(name) ? name.trim() : null;
         String normalizedRegion = StringUtils.hasText(region) ? region.trim() : null;
-        List<ScenicArea> rows = scenicAreaMapper.findPage(normalizedName, status, normalizedRegion, offset, pageSize);
+        // 普管只返回自己管辖的景区；超管可按条件查全量
+        Long scopedAreaId = scopeScenicAreaId();
+        List<ScenicArea> rows = scenicAreaMapper.findPage(scopedAreaId, normalizedName, status, normalizedRegion, offset, pageSize);
         if (rows == null) {
             rows = List.of();
         }
         List<ScenicAreaResult> data = rows.stream().map(this::toResult).toList();
-        return PageResult.of(data, scenicAreaMapper.count(normalizedName, status, normalizedRegion), page, pageSize);
+        return PageResult.of(data, scenicAreaMapper.count(scopedAreaId, normalizedName, status, normalizedRegion), page, pageSize);
     }
 
     @Override
@@ -56,7 +58,7 @@ public class ScenicAreaServiceImpl implements ScenicAreaService {
 
     @Override
     public ScenicAreaResult create(ScenicAreaRequest request) {
-        authorizeSuperAdmin();
+        requireSuperAdmin();
         if (StringUtils.hasText(request.getName())
                 && scenicAreaMapper.countByName(request.getName().trim()) > 0) {
             throw new BusinessException(ResultCode.CONFLICT, "景区名称已存在");
@@ -83,8 +85,9 @@ public class ScenicAreaServiceImpl implements ScenicAreaService {
 
     @Override
     public ScenicAreaResult update(Long id, ScenicAreaRequest request) {
+        // PRD 5.2：景区信息仅超管可维护，普管只可查看
+        requireSuperAdmin();
         ScenicArea area = loadArea(id);
-        authorizeScenicArea(area.getId());
         if (StringUtils.hasText(request.getName()) && !request.getName().trim().equals(area.getName())
                 && scenicAreaMapper.countByNameExcludeId(request.getName().trim(), id) > 0) {
             throw new BusinessException(ResultCode.CONFLICT, "景区名称已存在");
@@ -128,8 +131,9 @@ public class ScenicAreaServiceImpl implements ScenicAreaService {
 
     @Override
     public void delete(Long id) {
+        // PRD 5.2：景区信息仅超管可维护，普管只可查看
+        requireSuperAdmin();
         ScenicArea area = loadArea(id);
-        authorizeScenicArea(area.getId());
         scenicAreaMapper.softDelete(id);
     }
 
@@ -138,8 +142,9 @@ public class ScenicAreaServiceImpl implements ScenicAreaService {
         if (status == null || (status != 0 && status != 1)) {
             throw new BusinessException(ResultCode.BAD_REQUEST, "状态值不合法");
         }
+        // PRD 5.2：景区上下架仅超管可操作，普管只可查看
+        requireSuperAdmin();
         ScenicArea area = loadArea(id);
-        authorizeScenicArea(area.getId());
         scenicAreaMapper.updateStatus(id, status);
         area.setStatus(status);
         return toResult(area);
@@ -216,14 +221,32 @@ public class ScenicAreaServiceImpl implements ScenicAreaService {
         }
     }
 
-    private void authorizeSuperAdmin() {
+    private void requireSuperAdmin() {
         SysUser current = UserContext.getCurrentUser();
         if (current == null) {
             throw new BusinessException(ResultCode.UNAUTHORIZED);
         }
         if (!"super_admin".equals(current.getRole())) {
-            throw new BusinessException(ResultCode.FORBIDDEN, "仅超级管理员可创建景区");
+            throw new BusinessException(ResultCode.FORBIDDEN, "景区信息仅超级管理员可维护");
         }
+    }
+
+    /** 列表景区范围：admin 强制本人景区；super_admin 返回 null 表示查全量。 */
+    private Long scopeScenicAreaId() {
+        SysUser current = UserContext.getCurrentUser();
+        if (current == null) {
+            throw new BusinessException(ResultCode.UNAUTHORIZED);
+        }
+        if ("super_admin".equals(current.getRole())) {
+            return null;
+        }
+        if (!"admin".equals(current.getRole())) {
+            throw new BusinessException(ResultCode.FORBIDDEN, "无权查看景区数据");
+        }
+        if (current.getScenicAreaId() == null) {
+            throw new BusinessException(ResultCode.FORBIDDEN, "当前管理员未分配景区");
+        }
+        return current.getScenicAreaId();
     }
 
     private void validatePage(int page, int pageSize) {

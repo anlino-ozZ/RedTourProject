@@ -16,7 +16,9 @@ import type { ScenicAreaInfo } from '@red-tour-project/common'
 
 const userStore = useUserStore()
 
-// 普管只读：仅查看管辖景区，不可增删改
+// 全局唯一的只读例外：PRD 5.2 + 2.2 明确「景区管理：普管仅可查看管辖景区」，
+// 景区本身的增删改/上下架只归超管（后端 ScenicAreaServiceImpl 同样是 requireSuperAdmin）。
+// 其余业务页（文物/景点/路线/特产/剧本/知识库/打卡点）普管均可在管辖景区内增删改。
 const isReadOnly = computed(() => !userStore.isSuperAdmin)
 
 // ===== 列表 =====

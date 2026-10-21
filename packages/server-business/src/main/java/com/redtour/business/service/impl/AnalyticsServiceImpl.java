@@ -59,14 +59,15 @@ public class AnalyticsServiceImpl implements AnalyticsService {
     }
 
     @Override
-    public List<HotQuestionResult> hotQuestions(int topN) {
+    public List<HotQuestionResult> hotQuestions(Long scenicAreaId, int topN) {
         if (topN <= 0) {
             topN = 10;
         }
         if (topN > MAX_TOP_N) {
             topN = MAX_TOP_N;
         }
-        List<PopularQuestion> rows = analyticsMapper.findTopQuestions(topN);
+        Long scopedAreaId = scopeScenicAreaId(scenicAreaId);
+        List<PopularQuestion> rows = analyticsMapper.findTopQuestions(scopedAreaId, topN);
         if (rows == null) {
             return List.of();
         }

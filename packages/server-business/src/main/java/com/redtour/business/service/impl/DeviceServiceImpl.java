@@ -71,6 +71,7 @@ public class DeviceServiceImpl implements DeviceService {
         if (deviceId == null || deviceId.isBlank()) {
             throw new BusinessException(ResultCode.BAD_REQUEST, "设备ID不能为空");
         }
+        authorizeDevice(deviceId);
         String cmd = String.format("{\"cmd\":\"reboot\",\"deviceId\":\"%s\"}", deviceId);
         try {
             hardwareTcpClient.sendCommand(cmd);
@@ -82,6 +83,7 @@ public class DeviceServiceImpl implements DeviceService {
 
     @Override
     public DeviceCommandResult playAudio(String deviceId, DeviceAudioPlayRequest request) {
+        authorizeDevice(deviceId);
         Map<String, Object> payload = new LinkedHashMap<>();
         payload.put("cmd", "play_audio");
         payload.put("deviceId", deviceId);
@@ -91,6 +93,7 @@ public class DeviceServiceImpl implements DeviceService {
 
     @Override
     public DeviceCommandResult stopAudio(String deviceId) {
+        authorizeDevice(deviceId);
         Map<String, Object> payload = new LinkedHashMap<>();
         payload.put("cmd", "stop_audio");
         payload.put("deviceId", deviceId);
@@ -99,6 +102,7 @@ public class DeviceServiceImpl implements DeviceService {
 
     @Override
     public DeviceCommandResult setVolume(String deviceId, DeviceVolumeRequest request) {
+        authorizeDevice(deviceId);
         Map<String, Object> payload = new LinkedHashMap<>();
         payload.put("cmd", "set_volume");
         payload.put("deviceId", deviceId);
@@ -165,6 +169,37 @@ public class DeviceServiceImpl implements DeviceService {
         r.setSpeakerConnected(s.getSpeakerConnected());
         r.setLastHeartbeat(s.getLastHeartbeat());
         return r;
+    }
+
+    /**
+     * 下发指令前校验设备归属：设备未登记则拒绝；admin 只能操作本景区设备，super_admin 放行全部。
+     */
+    private void authorizeDevice(String deviceId) {
+        if (deviceId == null || deviceId.isBlank()) {
+            throw new BusinessException(ResultCode.BAD_REQUEST, "设备ID不能为空");
+        }
+        SysUser current = UserContext.getCurrentUser();
+        if (current == null) {
+            throw new BusinessException(ResultCode.UNAUTHORIZED);
+        }
+        if ("super_admin".equals(current.getRole())) {
+            return;
+        }
+        if (!"admin".equals(current.getRole())) {
+            throw new BusinessException(ResultCode.FORBIDDEN, "无权操作设备");
+        }
+        if (current.getScenicAreaId() == null) {
+            throw new BusinessException(ResultCode.FORBIDDEN, "当前管理员未分配景区");
+        }
+        DeviceStatus device = deviceStatusMapper.findByDeviceId(deviceId);
+        if (device == null) {
+            throw new BusinessException(ResultCode.NOT_FOUND, "设备不存在或未上报心跳");
+        }
+        if (!current.getScenicAreaId().equals(device.getScenicAreaId())) {
+            log.warn("[权限] 管理员 {} 越权操作设备 {}（归属景区 {}）",
+                    current.getId(), deviceId, device.getScenicAreaId());
+            throw new BusinessException(ResultCode.FORBIDDEN, "无权操作其他景区的设备");
+        }
     }
 
     /** admin 强制本人景区；super 透传筛选条件（可 null 查全量）。 */

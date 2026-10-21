@@ -69,6 +69,10 @@ public interface SpotMapper {
             + "FROM spot WHERE id = #{id} AND deleted = 0 LIMIT 1")
     Spot findById(@Param("id") Long id);
 
+    /** 按 ID 查询归属景区（关联校验用，如路线 spotIds 是否同属一个景区）。 */
+    @Select("SELECT scenic_area_id FROM spot WHERE id = #{id} AND deleted = 0 LIMIT 1")
+    Long selectScenicAreaIdById(@Param("id") Long id);
+
     /** 同景区内名称唯一性校验（新增时）。 */
     @Select("SELECT COUNT(1) FROM spot WHERE scenic_area_id = #{scenicAreaId} AND name = #{name} AND deleted = 0 LIMIT 1")
     long countByNameInScenicArea(@Param("scenicAreaId") Long scenicAreaId, @Param("name") String name);

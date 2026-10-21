@@ -1,7 +1,8 @@
 <script setup lang="ts">
 // PC管理后台 打卡点管理页（PRD 5.4）
 // 打卡点归属于景点，筛选/新增均需"景区 → 景点"两级联动
-// 超管可增删改全部景区打卡点，普管仅查看管辖景区（只读）
+// 超管可增删改全部景区打卡点，普管仅可增删改管辖景区内的打卡点（PRD 2.2「仅管辖景区内」）
+// 说明：普管与超管权限一致，只是景区范围被后端强制收窄到自己的管辖景区
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox, type FormInstance, type FormRules } from 'element-plus'
 import { RedButton } from '@red-tour-project/common'
@@ -20,11 +21,11 @@ import { useUserStore } from '@/store'
 import type { ScenicAreaInfo } from '@red-tour-project/common'
 
 const userStore = useUserStore()
-const isReadOnly = computed(() => !userStore.isSuperAdmin)
+const isSuperAdmin = computed(() => userStore.isSuperAdmin)
 
-// 普管管辖景区（自动绑定）
+// 普管管辖景区（自动绑定，后端也会强制收窄，这里只是让界面不显示无关筛选项）
 const boundScenicAreaId = computed(() =>
-  isReadOnly.value ? (userStore.userInfo?.scenicAreaId ?? undefined) : undefined,
+  isSuperAdmin.value ? undefined : (userStore.userInfo?.scenicAreaId ?? undefined),
 )
 
 // ===== 景区下拉 =====
@@ -313,7 +314,7 @@ onMounted(async () => {
     <div class="checkpoint-page__toolbar">
       <div class="checkpoint-page__search">
         <el-select
-          v-if="!isReadOnly"
+          v-if="isSuperAdmin"
           v-model="query.scenicAreaId"
           placeholder="景区筛选"
           clearable
@@ -334,9 +335,7 @@ onMounted(async () => {
         </el-select>
         <RedButton type="primary" size="small" @click="handleSearch">搜索</RedButton>
       </div>
-      <RedButton v-if="!isReadOnly" type="primary" size="small" @click="openCreate">
-        + 新增打卡点
-      </RedButton>
+      <RedButton type="primary" size="small" @click="openCreate">+ 新增打卡点</RedButton>
     </div>
 
     <!-- 表格 -->
@@ -358,7 +357,7 @@ onMounted(async () => {
       <el-table-column label="有效半径" width="110">
         <template #default="{ row }">{{ row.radius }} 米</template>
       </el-table-column>
-      <el-table-column v-if="!isReadOnly" label="操作" width="140" fixed="right">
+      <el-table-column label="操作" width="140" fixed="right">
         <template #default="{ row }">
           <el-button link type="primary" size="small" @click="openEdit(row)">编辑</el-button>
           <el-button link type="danger" size="small" @click="handleDelete(row)">删除</el-button>
@@ -393,7 +392,7 @@ onMounted(async () => {
             v-model="form.scenicAreaId"
             placeholder="请选择景区"
             filterable
-            :disabled="isReadOnly"
+            :disabled="!isSuperAdmin"
             style="width: 100%"
           >
             <el-option v-for="s in scenicOptions" :key="s.id" :label="s.name" :value="s.id" />

@@ -62,4 +62,8 @@ public interface DeviceStatusMapper {
             </script>
             """)
     List<DeviceStatus> findByScenicAreaId(@Param("scenicAreaId") Long scenicAreaId);
+
+    /** 按设备 ID 查询归属景区（用于下发指令前校验设备归属）。 */
+    @Select("SELECT device_id, scenic_area_id FROM device_status WHERE device_id = #{deviceId} LIMIT 1")
+    DeviceStatus findByDeviceId(@Param("deviceId") String deviceId);
 }

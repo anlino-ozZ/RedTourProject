@@ -16,13 +16,16 @@ import java.util.List;
 @Mapper
 public interface ScenicAreaMapper {
 
-    /** 管理端分页查询（已过滤软删除）。 */
+    /** 管理端分页查询（已过滤软删除）。scenicAreaId 非空时只返回该景区（普管数据隔离）。 */
     @Select("""
             <script>
             SELECT id, name, intro, longitude, latitude, address, open_hours, cover_image,
                    status, region, phone, sort_order, deleted, created_at, updated_at
             FROM scenic_area
             WHERE deleted = 0
+            <if test="scenicAreaId != null">
+                AND id = #{scenicAreaId}
+            </if>
             <if test="name != null and name != ''">
                 AND name LIKE CONCAT('%', #{name}, '%')
             </if>
@@ -36,7 +39,8 @@ public interface ScenicAreaMapper {
             LIMIT #{offset}, #{pageSize}
             </script>
             """)
-    List<ScenicArea> findPage(@Param("name") String name,
+    List<ScenicArea> findPage(@Param("scenicAreaId") Long scenicAreaId,
+                              @Param("name") String name,
                               @Param("status") Integer status,
                               @Param("region") String region,
                               @Param("offset") int offset,
@@ -48,6 +52,9 @@ public interface ScenicAreaMapper {
             SELECT COUNT(1)
             FROM scenic_area
             WHERE deleted = 0
+            <if test="scenicAreaId != null">
+                AND id = #{scenicAreaId}
+            </if>
             <if test="name != null and name != ''">
                 AND name LIKE CONCAT('%', #{name}, '%')
             </if>
@@ -59,7 +66,8 @@ public interface ScenicAreaMapper {
             </if>
             </script>
             """)
-    long count(@Param("name") String name,
+    long count(@Param("scenicAreaId") Long scenicAreaId,
+               @Param("name") String name,
                @Param("status") Integer status,
                @Param("region") String region);
 

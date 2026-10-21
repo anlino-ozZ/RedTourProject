@@ -9,6 +9,7 @@ import com.redtour.business.entity.GuideRoute;
 import com.redtour.business.entity.SysUser;
 import com.redtour.business.exception.BusinessException;
 import com.redtour.business.mapper.GuideRouteMapper;
+import com.redtour.business.mapper.SpotMapper;
 import com.redtour.business.service.GuideRouteService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -28,6 +29,7 @@ public class GuideRouteServiceImpl implements GuideRouteService {
     private static final int MAX_PAGE_SIZE = 100;
 
     private final GuideRouteMapper guideRouteMapper;
+    private final SpotMapper spotMapper;
 
     @Override
     public PageResult<GuideRouteResult> list(int page, int pageSize, String name, Long scenicAreaId, Integer status) {
@@ -58,6 +60,7 @@ public class GuideRouteServiceImpl implements GuideRouteService {
         route.setScenicAreaId(areaId);
         route.setName(request.getName().trim());
         route.setDescription(blankToNull(request.getDescription()));
+        validateSpotIds(request.getSpotIds(), areaId);
         route.setSpotIds(blankToNull(request.getSpotIds()));
         route.setDuration(request.getDuration());
         route.setDifficulty(request.getDifficulty().trim());
@@ -80,6 +83,8 @@ public class GuideRouteServiceImpl implements GuideRouteService {
             route.setDescription(blankToNull(request.getDescription()));
         }
         if (request.getSpotIds() != null) {
+            // 路线景区不可变更，故按原有归属校验，防止挂入其他景区景点
+            validateSpotIds(request.getSpotIds(), route.getScenicAreaId());
             route.setSpotIds(blankToNull(request.getSpotIds()));
         }
         if (request.getDuration() != null) {
@@ -218,6 +223,39 @@ public class GuideRouteServiceImpl implements GuideRouteService {
                 || current.getScenicAreaId() == null
                 || !current.getScenicAreaId().equals(scenicAreaId)) {
             throw new BusinessException(ResultCode.FORBIDDEN, "无权访问其他景区的数据");
+        }
+    }
+
+    /**
+     * 校验路线关联景点是否同属该景区：防止把其他景区的景点挂进本景区路线（跨景区越权关联）。
+     * spotIds 为 JSON 数组字符串，如 [1,3,5]。
+     */
+    private void validateSpotIds(String spotIds, Long scenicAreaId) {
+        if (!StringUtils.hasText(spotIds)) {
+            return;
+        }
+        String plain = spotIds.trim().replaceAll("[\\[\\]]", "");
+        if (plain.isEmpty()) {
+            return;
+        }
+        for (String part : plain.split(",")) {
+            String idText = part.trim();
+            if (idText.isEmpty()) {
+                continue;
+            }
+            Long spotId;
+            try {
+                spotId = Long.parseLong(idText);
+            } catch (NumberFormatException e) {
+                throw new BusinessException(ResultCode.BAD_REQUEST, "路线景点序列格式不合法");
+            }
+            Long spotAreaId = spotMapper.selectScenicAreaIdById(spotId);
+            if (spotAreaId == null) {
+                throw new BusinessException(ResultCode.BAD_REQUEST, "路线关联的景点不存在: " + spotId);
+            }
+            if (!spotAreaId.equals(scenicAreaId)) {
+                throw new BusinessException(ResultCode.FORBIDDEN, "路线只能关联本景区的景点");
+            }
         }
     }
 

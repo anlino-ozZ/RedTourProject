@@ -77,9 +77,18 @@ public interface UserAchievementMapper {
     @Select("SELECT COUNT(1) FROM script_progress WHERE user_id = #{userId} AND script_id = #{scriptId} AND completed = 1")
     long countCompletedScript(@Param("userId") Long userId, @Param("scriptId") Long scriptId);
 
-    /** 某成就被多少用户解锁。 */
-    @Select("SELECT COUNT(1) FROM user_achievement WHERE achievement_id = #{achievementId}")
-    long countByAchievementId(@Param("achievementId") Long achievementId);
+    /** 某成就被多少用户解锁；scenicAreaId 非空时只统计该景区（普管数据隔离）。 */
+    @Select("""
+            <script>
+            SELECT COUNT(1) FROM user_achievement
+            WHERE achievement_id = #{achievementId}
+            <if test="scenicAreaId != null">
+                AND scenic_area_id = #{scenicAreaId}
+            </if>
+            </script>
+            """)
+    long countByAchievementId(@Param("achievementId") Long achievementId,
+                              @Param("scenicAreaId") Long scenicAreaId);
 
     /** 写入用户成就解锁记录（uk_user_achievement 幂等：已存在则跳过）。 */
     @Insert("INSERT INTO user_achievement (user_id, achievement_id, unlocked_at, unlock_source, scenic_area_id) "

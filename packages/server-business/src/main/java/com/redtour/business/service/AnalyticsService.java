@@ -18,8 +18,8 @@ public interface AnalyticsService {
     /** 热门景点（按打卡次数聚合）。 */
     List<HotSpotResult> hotSpots(Long scenicAreaId);
 
-    /** 热门问题 topN（来自 popular_question 表）。 */
-    List<HotQuestionResult> hotQuestions(int topN);
+    /** 热门问题 topN（来自 popular_question 表），按 scenicAreaId 隔离。 */
+    List<HotQuestionResult> hotQuestions(Long scenicAreaId, int topN);
 
     /** 产品点击排行。 */
     List<ProductClickResult> products(Long scenicAreaId);

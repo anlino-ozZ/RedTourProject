@@ -63,7 +63,8 @@ public class UserAchievementServiceImpl implements UserAchievementService {
         } else {
             throw new BusinessException(ResultCode.FORBIDDEN, "无权访问该数据");
         }
-        long count = userAchievementMapper.countByAchievementId(achievementId);
+        // count 与列表必须用同一景区口径，否则普管会看到全景区总数（跨景区信息泄露）
+        long count = userAchievementMapper.countByAchievementId(achievementId, resolvedArea);
         List<AchievementUnlockerResult> list = userAchievementMapper.listUnlockers(achievementId, resolvedArea);
         if (list == null) {
             list = List.of();

@@ -52,8 +52,9 @@ public class AnalyticsController {
     /** 热门问题 topN（来自 popular_question 表）。 */
     @GetMapping("/hot-questions")
     public ApiResponse<List<HotQuestionResult>> hotQuestions(
+            @RequestParam(required = false) Long scenicAreaId,
             @RequestParam(defaultValue = "10") @Min(1) @Max(100) int topN) {
-        return ApiResponse.success(analyticsService.hotQuestions(topN));
+        return ApiResponse.success(analyticsService.hotQuestions(scenicAreaId, topN));
     }
 
     /** 产品点击排行。 */
