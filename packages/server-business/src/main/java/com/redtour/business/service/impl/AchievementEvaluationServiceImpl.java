@@ -41,7 +41,7 @@ public class AchievementEvaluationServiceImpl implements AchievementEvaluationSe
     @Override
     public List<String> evaluateOnCheckin(Long userId, Long scenicAreaId) {
         List<String> unlocked = new ArrayList<>();
-        for (Achievement a : loadCandidates(CHECKIN_TYPES)) {
+        for (Achievement a : loadCandidates(CHECKIN_TYPES, scenicAreaId)) {
             if (isUnlocked(userId, a.getId())) {
                 continue;
             }
@@ -55,7 +55,7 @@ public class AchievementEvaluationServiceImpl implements AchievementEvaluationSe
     @Override
     public List<String> evaluateOnRouteComplete(Long userId, Long routeId, Long scenicAreaId) {
         List<String> unlocked = new ArrayList<>();
-        for (Achievement a : loadCandidates(List.of("route"))) {
+        for (Achievement a : loadCandidates(List.of("route"), scenicAreaId)) {
             if (isUnlocked(userId, a.getId())) {
                 continue;
             }
@@ -69,7 +69,7 @@ public class AchievementEvaluationServiceImpl implements AchievementEvaluationSe
     @Override
     public List<String> evaluateOnScriptComplete(Long userId, Long scriptId, Long scenicAreaId) {
         List<String> unlocked = new ArrayList<>();
-        for (Achievement a : loadCandidates(SCRIPT_TYPES)) {
+        for (Achievement a : loadCandidates(SCRIPT_TYPES, scenicAreaId)) {
             if (isUnlocked(userId, a.getId())) {
                 continue;
             }
@@ -80,8 +80,16 @@ public class AchievementEvaluationServiceImpl implements AchievementEvaluationSe
         return unlocked;
     }
 
-    private List<Achievement> loadCandidates(List<String> types) {
-        List<Achievement> list = achievementMapper.findActiveByTriggerTypes(types);
+    /**
+     * 加载候选成就：只取归属本景区的成就 + 全局成就，保证解锁记录的
+     * scenic_area_id 一定与成就归属一致，普管按景区查询时才能查全。
+     */
+    private List<Achievement> loadCandidates(List<String> types, Long scenicAreaId) {
+        if (scenicAreaId == null) {
+            log.warn("[成就] 缺少事件景区，跳过解锁评估");
+            return List.of();
+        }
+        List<Achievement> list = achievementMapper.findActiveByTriggerTypes(scenicAreaId, types);
         return list == null ? List.of() : list;
     }
 

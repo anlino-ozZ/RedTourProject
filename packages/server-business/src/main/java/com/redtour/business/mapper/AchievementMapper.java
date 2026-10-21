@@ -89,16 +89,24 @@ public interface AchievementMapper {
     @Select("SELECT COUNT(1) FROM user_achievement WHERE achievement_id = #{id}")
     long countUserAchievement(@Param("id") Long id);
 
-    /** 加载上架成就中指定触发类型的候选（用于解锁判定）。 */
+    /**
+     * 加载上架成就中指定触发类型的候选（用于解锁判定）。
+     * 只取归属该景区的成就 + 全局成就（scenic_area_id IS NULL），
+     * 否则 A 景区的成就会在 B 景区被解锁，产生跨景区的 user_achievement 记录。
+     */
     @Select("<script>"
             + "SELECT id, title, icon, description, trigger_type, trigger_condition, status, scenic_area_id, created_at "
             + "FROM achievement "
             + "WHERE status = 1 "
+            + "<if test='scenicAreaId != null'>"
+            + "  AND (scenic_area_id = #{scenicAreaId} OR scenic_area_id IS NULL)"
+            + "</if>"
             + "<if test='triggerTypes != null and triggerTypes.size() > 0'>"
             + "  AND trigger_type IN "
             + "  <foreach item='t' collection='triggerTypes' open='(' separator=',' close=')'>#{t}</foreach>"
             + "</if>"
             + "ORDER BY id"
             + "</script>")
-    List<Achievement> findActiveByTriggerTypes(@Param("triggerTypes") List<String> triggerTypes);
+    List<Achievement> findActiveByTriggerTypes(@Param("scenicAreaId") Long scenicAreaId,
+                                               @Param("triggerTypes") List<String> triggerTypes);
 }

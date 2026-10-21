@@ -16,6 +16,12 @@ public interface WikiEntryService {
 
     WikiEntryResult get(Long id);
 
+    /** 触摸屏公开列表：无鉴权，按景区过滤，不带正文。 */
+    PageResult<WikiEntryResult> publicList(Long scenicAreaId, int page, int pageSize, String keyword);
+
+    /** 触摸屏公开详情：无鉴权，带正文。 */
+    WikiEntryResult publicGet(Long id);
+
     WikiEntryResult update(Long id, WikiUpdateRequest request);
 
     WikiEntryResult compile(Long id);

@@ -2,7 +2,8 @@
 SQLyog Ultimate v11.25 (64 bit)
 MySQL - 8.0.26 : Database - red_tour
 *********************************************************************
-*/
+*/
+
 
 /*!40101 SET NAMES utf8 */;
 
@@ -465,6 +466,11 @@ CREATE TABLE `wiki_entry` (
   `tags` json DEFAULT NULL COMMENT '分类标签数组',
   `links` json DEFAULT NULL COMMENT '引用的 Wiki 条目路径数组',
   `compile_status` varchar(20) NOT NULL DEFAULT 'pending' COMMENT '编译状态: pending / compiling / done / failed',
+  `published_title` varchar(100) DEFAULT NULL COMMENT '已发布版本标题快照（上次编译成功时的 title）',
+  `published_file_path` varchar(255) DEFAULT NULL COMMENT '已发布版本文件路径快照（上次编译成功时的 file_path）',
+  `published_content` longtext COMMENT '已发布版本正文快照（上次编译成功时的 content）',
+  `published_tags` json DEFAULT NULL COMMENT '已发布版本标签快照（上次编译成功时的 tags）',
+  `published_links` json DEFAULT NULL COMMENT '已发布版本引用链接快照（上次编译成功时的 links）',
   `created_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
   `updated_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '最后编译时间',
   PRIMARY KEY (`id`),

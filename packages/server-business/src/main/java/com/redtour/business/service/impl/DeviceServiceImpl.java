@@ -15,6 +15,7 @@ import com.redtour.business.entity.DeviceStatus;
 import com.redtour.business.entity.SysUser;
 import com.redtour.business.exception.BusinessException;
 import com.redtour.business.mapper.DeviceStatusMapper;
+import com.redtour.business.mapper.ScenicAreaMapper;
 import com.redtour.business.service.DeviceService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -35,11 +36,23 @@ import java.util.stream.Collectors;
 public class DeviceServiceImpl implements DeviceService {
 
     private final DeviceStatusMapper deviceStatusMapper;
+    private final ScenicAreaMapper scenicAreaMapper;
     private final HardwareTcpClient hardwareTcpClient;
     private final ObjectMapper objectMapper;
 
     @Override
     public DeviceHeartbeatResult handleHeartbeat(DeviceHeartbeatRequest request) {
+        if (request.getDeviceId() == null || request.getDeviceId().isBlank()) {
+            throw new BusinessException(ResultCode.BAD_REQUEST, "设备ID不能为空");
+        }
+        validateHeartbeatScenicArea(request.getScenicAreaId());
+        // 归属以首次登记为准：心跳无鉴权，不允许改写已有设备的景区
+        DeviceStatus existing = deviceStatusMapper.findByDeviceId(request.getDeviceId());
+        if (existing != null && existing.getScenicAreaId() != null
+                && !existing.getScenicAreaId().equals(request.getScenicAreaId())) {
+            log.warn("[设备] 设备 {} 心跳景区({})与已登记归属({})不一致，保留原归属",
+                    request.getDeviceId(), request.getScenicAreaId(), existing.getScenicAreaId());
+        }
         DeviceStatus status = new DeviceStatus();
         status.setDeviceId(request.getDeviceId());
         status.setScenicAreaId(request.getScenicAreaId());
@@ -169,6 +182,17 @@ public class DeviceServiceImpl implements DeviceService {
         r.setSpeakerConnected(s.getSpeakerConnected());
         r.setLastHeartbeat(s.getLastHeartbeat());
         return r;
+    }
+
+    /**
+     * 心跳归属校验：景区必须真实存在，拒绝把设备登记到不存在的景区。
+     * 心跳接口在鉴权白名单内（硬件无法登录），故至少要做存在性校验，避免脏数据。
+     */
+    private void validateHeartbeatScenicArea(Long scenicAreaId) {
+        if (scenicAreaId == null || scenicAreaId <= 0
+                || scenicAreaMapper.findById(scenicAreaId) == null) {
+            throw new BusinessException(ResultCode.BAD_REQUEST, "心跳上报的归属景区不存在");
+        }
     }
 
     /**

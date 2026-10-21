@@ -17,6 +17,11 @@ public interface DeviceStatusMapper {
 
     /**
      * 心跳 upsert：存在则更新为在线并刷新各指标与 last_heartbeat，否则插入在线记录。
+     *
+     * 注意：ON DUPLICATE KEY UPDATE 刻意不更新 scenic_area_id——
+     * 心跳接口无鉴权（硬件设备无法登录），若允许覆盖，任何拿到 deviceId 的人
+     * 都能把设备改挂到别的景区，从而绕过普管的景区隔离。
+     * 设备归属以首次登记为准，变更需由管理端显式操作。
      */
     @Insert("""
             INSERT INTO device_status
@@ -26,7 +31,6 @@ public interface DeviceStatusMapper {
                 (#{deviceId}, #{scenicAreaId}, 1, #{cpuTemp}, #{memoryUsage}, #{diskUsage},
                  #{hailoStatus}, #{cameraConnected}, #{speakerConnected}, CURRENT_TIMESTAMP)
             ON DUPLICATE KEY UPDATE
-                scenic_area_id = VALUES(scenic_area_id),
                 online = 1,
                 cpu_temp = VALUES(cpu_temp),
                 memory_usage = VALUES(memory_usage),

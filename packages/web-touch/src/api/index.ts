@@ -24,12 +24,12 @@ export function getWikiList(params: {
   pageSize?: number
   keyword?: string
 }) {
-  return request.get<unknown, PageResult<WikiEntry>>('/admin/wiki', { params })
+  return request.get<unknown, PageResult<WikiEntry>>('/wiki', { params })
 }
 
 /** Wiki 条目详情 */
 export function getWikiDetail(id: number) {
-  return request.get<unknown, WikiEntry>(`/admin/wiki/${id}`)
+  return request.get<unknown, WikiEntry>(`/wiki/${id}`)
 }
 
 /**

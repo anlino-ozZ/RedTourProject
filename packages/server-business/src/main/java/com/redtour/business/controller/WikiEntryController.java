@@ -39,6 +39,7 @@ public class WikiEntryController {
     private final WikiEntryService wikiEntryService;
 
     @GetMapping
+    @RequireRole({"super_admin", "admin"})
     public ApiResponse<PageResult<WikiEntryResult>> list(
             @RequestParam("scenicAreaId") @Positive(message = "景区ID必须为正整数") Long scenicAreaId,
             @RequestParam(defaultValue = "1") @Min(value = 1, message = "页码必须为正整数") int page,
@@ -61,6 +62,7 @@ public class WikiEntryController {
     }
 
     @GetMapping("/{id}")
+    @RequireRole({"super_admin", "admin"})
     public ApiResponse<WikiEntryResult> get(@PathVariable @Positive(message = "Wiki条目ID必须为正整数") Long id) {
         return ApiResponse.success(wikiEntryService.get(id));
     }

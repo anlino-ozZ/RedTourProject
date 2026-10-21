@@ -51,9 +51,10 @@ public class WebMvcConfig implements WebMvcConfigurer {
                         "/api/v1/ask/recommendations",
                         "/api/v1/ask",
                         "/api/v1/stt",
-                        // 触摸屏大屏 Wiki 公开读取
-                        "/api/v1/admin/wiki",
-                        "/api/v1/admin/wiki/*",
+                        // Wiki 公开读取走独立的 /api/v1/wiki（触摸屏快捷信息页数据源）。
+                        // 管理端 /api/v1/admin/wiki 已收回到鉴权内，普管按景区隔离。
+                        "/api/v1/wiki",
+                        "/api/v1/wiki/*",
                         // 姿态识别公开接口
                         "/api/v1/pose/**",
                         // 设备心跳（局域网白名单校验另做）

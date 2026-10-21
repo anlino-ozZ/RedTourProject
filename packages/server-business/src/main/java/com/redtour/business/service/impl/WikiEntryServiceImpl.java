@@ -107,6 +107,39 @@ public class WikiEntryServiceImpl implements WikiEntryService {
     }
 
     @Override
+    public PageResult<WikiEntryResult> publicList(Long scenicAreaId, int page, int pageSize, String keyword) {
+        validateScenicAreaId(scenicAreaId);
+        validatePage(page, pageSize);
+        String normalizedKeyword = StringUtils.hasText(keyword) ? keyword.trim() : null;
+        long offsetValue = (long) (page - 1) * pageSize;
+        if (offsetValue > Integer.MAX_VALUE) {
+            throw new BusinessException(ResultCode.BAD_REQUEST, "分页范围过大");
+        }
+        int offset = (int) offsetValue;
+        List<WikiEntry> pageEntries = wikiEntryMapper.findPublicPage(scenicAreaId, normalizedKeyword, offset, pageSize);
+        if (pageEntries == null) {
+            pageEntries = List.of();
+        }
+        List<WikiEntryResult> entries = pageEntries
+                .stream()
+                .map(entry -> toResult(entry, false))
+                .toList();
+        return PageResult.of(entries, wikiEntryMapper.countPublic(scenicAreaId, normalizedKeyword), page, pageSize);
+    }
+
+    @Override
+    public WikiEntryResult publicGet(Long id) {
+        if (id == null || id <= 0) {
+            throw new BusinessException(ResultCode.BAD_REQUEST, "Wiki条目ID必须为正整数");
+        }
+        WikiEntry entry = wikiEntryMapper.findPublicById(id);
+        if (entry == null) {
+            throw new BusinessException(ResultCode.NOT_FOUND, "Wiki条目不存在或尚未发布");
+        }
+        return toResult(entry, true);
+    }
+
+    @Override
     public WikiEntryResult update(Long id, WikiUpdateRequest request) {
         Objects.requireNonNull(request, "request");
         WikiEntry entry = loadEntry(id);
@@ -151,7 +184,8 @@ public class WikiEntryServiceImpl implements WikiEntryService {
             filePath = normalizeCompiledPath(filePath, entry.getFilePath());
             List<String> links = parseAnyArray(response.get("links"));
             String linksJson = toJsonArray(links);
-            wikiEntryMapper.markDone(id, filePath, linksJson);
+            // 编译成功：写当前结果，并把对外字段整体快照为已发布版本
+            wikiEntryMapper.markDone(id, entry.getTitle(), entry.getContent(), entry.getTags(), filePath, linksJson);
             entry.setFilePath(filePath);
             entry.setLinks(linksJson);
             entry.setCompileStatus(STATUS_DONE);
@@ -168,8 +202,13 @@ public class WikiEntryServiceImpl implements WikiEntryService {
     public void delete(Long id) {
         WikiEntry entry = loadEntry(id);
         authorizeScenicArea(entry.getScenicAreaId());
+        // 已发布版本可能指向另一份产物（编辑时 file_path 会改指向新目标），先取出来再删库
+        String publishedPath = wikiEntryMapper.findPublishedFilePath(id);
         wikiEntryMapper.deleteById(id);
         deleteCompiledArtifact(entry.getFilePath());
+        if (StringUtils.hasText(publishedPath) && !publishedPath.equals(entry.getFilePath())) {
+            deleteCompiledArtifact(publishedPath);
+        }
     }
 
     private WikiEntry loadEntry(Long id) {
@@ -183,10 +222,14 @@ public class WikiEntryServiceImpl implements WikiEntryService {
         return entry;
     }
 
+    /**
+     * 管理端 Wiki 归属校验。匿名请求一律拒绝：
+     * 触摸屏公开读取改走 /api/v1/wiki（WikiPublicController），不再复用管理端路径。
+     */
     private void authorizeScenicArea(Long scenicAreaId) {
         SysUser current = UserContext.getCurrentUser();
         if (current == null) {
-            return;
+            throw new BusinessException(ResultCode.UNAUTHORIZED);
         }
         if ("super_admin".equals(current.getRole())) {
             return;
