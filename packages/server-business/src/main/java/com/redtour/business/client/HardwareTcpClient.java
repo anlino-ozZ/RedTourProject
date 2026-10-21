@@ -1,7 +1,10 @@
 package com.redtour.business.client;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.annotation.PostConstruct;
 import jakarta.annotation.PreDestroy;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -19,10 +22,14 @@ import java.net.SocketTimeoutException;
  * - 周期性心跳保活 + 断线自动重连（每 5s 检查一次，失败无限重试）
  * - 按行（换行分隔）收发 JSON 指令
  * - 发送命令遇到连接异常自动重连 1 次后重试
+ * - 读响应时自动跳过硬件主动上行的 event（如 audio_finished），避免污染响应
  */
 @Slf4j
 @Component
+@RequiredArgsConstructor
 public class HardwareTcpClient {
+
+    private final ObjectMapper objectMapper;
 
     @Value("${hardware.tcp.host}")
     private String host;
@@ -80,7 +87,7 @@ public class HardwareTcpClient {
                 return;
             }
             writer.println("{\"cmd\":\"ping\"}");
-            String resp = reader.readLine();
+            String resp = readCommandResponse();
             if (resp == null) {
                 log.warn("[硬件] 心跳收到 EOF，连接已断开，下次重连...");
                 closeQuietly();
@@ -104,13 +111,13 @@ public class HardwareTcpClient {
         }
         try {
             writer.println(jsonCmd);
-            String resp = reader.readLine();
+            String resp = readCommandResponse();
             if (resp == null) {
                 // 远端关闭
                 closeQuietly();
                 connect();
                 writer.println(jsonCmd);
-                resp = reader.readLine();
+                resp = readCommandResponse();
             }
             return resp;
         } catch (Exception e) {
@@ -119,7 +126,38 @@ public class HardwareTcpClient {
             closeQuietly();
             connect();
             writer.println(jsonCmd);
-            return reader.readLine();
+            return readCommandResponse();
+        }
+    }
+
+    /**
+     * 读取一行指令响应。
+     * 硬件可能在响应之前主动上行 event（如播放完成的 audio_finished），
+     * 这类消息带 event、不带 cmd，需跳过继续读，否则会被误判为指令响应。
+     *
+     * @return 响应行；对端关闭返回 null
+     */
+    private String readCommandResponse() throws Exception {
+        while (true) {
+            String line = reader.readLine();
+            if (line == null) {
+                return null;
+            }
+            if (isUplinkEvent(line)) {
+                log.info("[硬件] 收到上行事件: {}", line);
+                continue;
+            }
+            return line;
+        }
+    }
+
+    /** 判断是否为硬件主动上行事件（带 event 且不带 cmd 的 JSON） */
+    private boolean isUplinkEvent(String line) {
+        try {
+            JsonNode node = objectMapper.readTree(line);
+            return node.isObject() && node.has("event") && !node.has("cmd");
+        } catch (Exception e) {
+            return false;
         }
     }
 

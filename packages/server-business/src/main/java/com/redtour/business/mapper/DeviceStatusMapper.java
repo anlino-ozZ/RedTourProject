@@ -40,10 +40,15 @@ public interface DeviceStatusMapper {
 
     /**
      * 按景区查询设备状态列表；scenicAreaId 为 null 时返回全部（super_admin 全量视角）。
+     * online 不直接取库里存值，而是按 last_heartbeat 是否超过 2 分钟实时判定，
+     * 避免设备断电后仍显示在线（前端 DeviceStatus.online 注释同此口径）。
      */
     @Select("""
             <script>
-            SELECT device_id, scenic_area_id, online, cpu_temp, memory_usage, disk_usage,
+            SELECT device_id, scenic_area_id,
+                   IF(last_heartbeat IS NOT NULL
+                      AND last_heartbeat >= DATE_SUB(NOW(), INTERVAL 2 MINUTE), 1, 0) AS online,
+                   cpu_temp, memory_usage, disk_usage,
                    hailo_status, camera_connected, speaker_connected, last_heartbeat
             FROM device_status
             <if test="scenicAreaId != null">
