@@ -1,0 +1,13 @@
+# 本地私有配置（不入库，复制自 application-dev.example.yml 后改成自己的值）
+# 放置位置：packages/server-business/config/application-dev.yml
+# Spring Boot 默认会加载运行目录下的 config/ 覆盖 classpath 中的同名配置，无需任何 import。
+mysql:
+  password: "填写你自己的 MySQL 密码"
+
+redis:
+  host: 填写你自己的 Redis 地址
+  password:
+
+hardware:
+  tcp:
+    host: 127.0.0.1

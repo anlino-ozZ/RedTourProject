@@ -91,6 +91,21 @@ git checkout main && git merge dev && git tag v1.0.0
 
 ## 六、各模块启动命令
 
+### 0. 首次拉取后需要做的事（新成员必读）
+
+只有**业务后端**和**AI 引擎 / 树莓派硬件**需要手动提供本机私密配置；三个前端开箱即用
+（`.env.development` 已随仓库提交，默认指向 `http://localhost:8000/api/v1`）。
+
+| 模块 | 是否要配 | 配在哪 | 操作 |
+| --- | --- | --- | --- |
+| `server-business` | **必须** | `packages/server-business/config/application-dev.yml`（已 gitignore） | `cp config/application-dev.example.yml config/application-dev.yml`，填 MySQL 密码与 Redis 地址；再建库 `red_tour` 并导入 `src/main/resources/db/schema.sql`。详见该目录 README |
+| `ai-engine` | 按需 | `packages/ai-engine/.env`（已 gitignore） | `cp .env.example .env`；默认走本机 Ollama（`http://localhost:11434`，`qwen2.5:7b`），改用云端模型时填 `LLM_API_KEY` + `LLM_PROVIDER=cloud` |
+| `hardware-rpi` | 仅树莓派 | `packages/hardware-rpi/.env` | `cp .env.example .env` 后改串口 / GPIO / `TCP_PORT`（需与后端 `hardware.tcp.port` 一致） |
+| `web-h5` / `web-admin` / `web-touch` | 一般不用 | `packages/<端>/.env.development`（已提交） | 默认 `VITE_API_BASE_URL=http://localhost:8000/api/v1`；后端换端口或改局域网 IP 时才改（web-h5 也可用 `VITE_PROXY_TARGET` 改代理目标）。生产构建走 `.env.production`（相对路径 `/api/v1`，需 Nginx 反代） |
+
+> 统一原则：**任何密码、API Key、内网 IP 都不进 Git**，只允许写在被 `.gitignore` 忽略的本地文件里，
+> 仓库只提交 `.example` / `.env.example` 模板。提交前用 `git status` 自检，出现配置文件变更请立即停止提交。
+
 ### 前端（进入对应目录后执行，各自独立依赖）
 
 ```bash
