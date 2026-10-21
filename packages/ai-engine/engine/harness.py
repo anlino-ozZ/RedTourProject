@@ -6,6 +6,7 @@ MVP 版本实现本地上下文注入和受控 Wiki 检索，使用 Ollama 进�
 
 from __future__ import annotations
 
+import logging
 import os
 import re
 from collections.abc import Callable
@@ -13,10 +14,23 @@ from pathlib import Path
 from time import perf_counter
 from typing import Any, Mapping
 
+from engine.cloud_infer import (
+    CloudLlmClient,
+    LLM_PROVIDER_CLOUD,
+    LLM_PROVIDER_OLLAMA,
+    resolve_llm_provider,
+)
 from engine.llm_wiki import WikiCompileError, WikiCompiler
 from engine.ollama_infer import OllamaClient
 
 STAGE_TIMINGS_KEY = "_stageTimings"
+
+# 引用校验未通过时的降级文案。必须与"模型不可用"区分开：这里模型其实正常工作，
+# 只是本次回答没能落地到已检索的 Wiki，若抛异常会被 AskService 兜底成"模型暂不可用"，
+# 误导运维排查方向。
+NO_EVIDENCE_ANSWER = "知识库暂无足够依据，暂时无法可靠回答这个问题。"
+
+logger = logging.getLogger(__name__)
 
 
 class LocalContextMiddleware:
@@ -129,20 +143,61 @@ class Harness:
         clock: Callable[[], float] = perf_counter,
     ) -> None:
         self.context_middleware = context_middleware or LocalContextMiddleware()
-        self.ollama_client = ollama_client or OllamaClient()
+        # 显式注入客户端时以客户端类型为准，否则按 LLM_PROVIDER 装配
+        if ollama_client is not None:
+            self.llm_provider = (
+                LLM_PROVIDER_CLOUD
+                if isinstance(ollama_client, CloudLlmClient)
+                else LLM_PROVIDER_OLLAMA
+            )
+            self.ollama_client = ollama_client
+        else:
+            self.llm_provider = self._resolve_provider()
+            self.ollama_client = (
+                CloudLlmClient() if self.llm_provider == LLM_PROVIDER_CLOUD else OllamaClient()
+            )
         self._clock = clock
         default_model = getattr(self.ollama_client, "model", OllamaClient.DEFAULT_MODEL)
-        self.reasoning_model = os.getenv("OLLAMA_REASONING_MODEL", default_model)
-        self.polish_model = os.getenv(
-            "OLLAMA_LIGHT_MODEL", os.getenv("OLLAMA_MODEL", default_model)
-        )
+        # 模型名按 provider 各自取值：云端绝不能回退到 OLLAMA_*，否则会把本地模型名发给云端
+        if self.llm_provider == LLM_PROVIDER_CLOUD:
+            self.reasoning_model = (
+                self._clean_env("LLM_REASONING_MODEL")
+                or self._clean_env("LLM_MODEL")
+                or default_model
+            )
+            self.polish_model = (
+                self._clean_env("LLM_LIGHT_MODEL")
+                or self._clean_env("LLM_MODEL")
+                or default_model
+            )
+        else:
+            self.reasoning_model = self._clean_env("OLLAMA_REASONING_MODEL") or default_model
+            self.polish_model = (
+                self._clean_env("OLLAMA_LIGHT_MODEL")
+                or self._clean_env("OLLAMA_MODEL")
+                or default_model
+            )
         self.max_context_chars = self._positive_int_env(
             "WIKI_MAX_CONTEXT_CHARS", self.MAX_CONTEXT_CHARS
         )
-        self.reasoning_max_tokens = self._positive_int_env(
-            "OLLAMA_REASONING_MAX_TOKENS", 128
-        )
-        self.answer_max_tokens = self._positive_int_env("OLLAMA_ANSWER_MAX_TOKENS", 256)
+        # 云端（尤其推理型模型）需要更大的输出预算：本地 128/256 会被思考过程耗尽导致空回答
+        if self.llm_provider == LLM_PROVIDER_CLOUD:
+            self.reasoning_max_tokens = self._positive_int_env("LLM_REASONING_MAX_TOKENS", 512)
+            self.answer_max_tokens = self._positive_int_env("LLM_ANSWER_MAX_TOKENS", 1024)
+        else:
+            self.reasoning_max_tokens = self._positive_int_env("OLLAMA_REASONING_MAX_TOKENS", 128)
+            self.answer_max_tokens = self._positive_int_env("OLLAMA_ANSWER_MAX_TOKENS", 256)
+
+    @staticmethod
+    def _resolve_provider() -> str:
+        """解析 LLM 提供者；未配置或取值未知时一律回退 ollama，保证离线部署不被误切换。"""
+        return resolve_llm_provider()
+
+    @staticmethod
+    def _clean_env(name: str) -> str:
+        """读取环境变量并剔除误写入的行内注释，避免模型名被 ``key=value  # 注释`` 污染。"""
+        raw = (os.getenv(name) or "").strip()
+        return raw.split("#", 1)[0].strip() if "#" in raw else raw
 
     def reasoning_sandwich(
         self, query: str, context: dict[str, Any], references: list[dict[str, Any]] | None = None
@@ -177,7 +232,8 @@ class Harness:
         polish_prompt = (
             "你是红色文旅离线讲解员。请根据问题规划和本地 Wiki 资料输出最终回答。"
             "回答必须使用简体中文、简洁易懂；资料不足时明确说‘知识库暂无足够依据’，"
-            "不要编造史实、不要输出思考过程、不要虚构 Wiki 路径。\n"
+            "不要编造史实、不要输出思考过程、不要虚构 Wiki 路径；"
+            "回答正文中不要出现任何以 wiki/ 开头的路径，来源由系统另行标注。\n"
             f"问题规划：{plan.strip()}\n"
             f"本地资料：\n{evidence or '（没有检索到相关 Wiki 资料）'}\n\n"
             f"游客问题：{query}\n\n请给出最终回答。"
@@ -217,6 +273,21 @@ class Harness:
             for path in mentioned_paths
         )
 
+    @staticmethod
+    def _no_evidence_result(
+        retrieval_ms: int, inference_ms: int, verification_ms: int
+    ) -> dict[str, Any]:
+        """构造"资料不足"的降级结果，保持各阶段耗时可观测。"""
+        return {
+            "answer": NO_EVIDENCE_ANSWER,
+            "sources": [],
+            STAGE_TIMINGS_KEY: {
+                "retrievalMs": retrieval_ms,
+                "inferenceMs": inference_ms,
+                "verificationMs": verification_ms,
+            },
+        }
+
     def update_todo(self, tasks: list[str]) -> None:
         """保留 Harness 状态协议入口；MVP 不写用户目录，避免污染运行环境。"""
         _ = tasks
@@ -232,15 +303,7 @@ class Harness:
         references = self.context_middleware.retrieve(normalized_question, context)
         retrieval_ms = self._elapsed_ms(retrieval_started_at)
         if not references:
-            return {
-                "answer": "知识库暂无足够依据，暂时无法可靠回答这个问题。",
-                "sources": [],
-                STAGE_TIMINGS_KEY: {
-                    "retrievalMs": retrieval_ms,
-                    "inferenceMs": 0,
-                    "verificationMs": 0,
-                },
-            }
+            return self._no_evidence_result(retrieval_ms, 0, 0)
 
         inference_started_at = self._clock()
         answer = self.reasoning_sandwich(normalized_question, context, references)
@@ -248,7 +311,20 @@ class Harness:
 
         verification_started_at = self._clock()
         if not self.verify_gate(answer, references):
-            raise RuntimeError("回答引用未通过验证")
+            # 模型可用但本次回答未落地到已检索资料：绝不展示未校验内容，
+            # 也不抛异常（否则会被兜底成"模型暂不可用"，掩盖真实原因）。
+            verification_ms = self._elapsed_ms(verification_started_at)
+            logger.warning(
+                "wiki_answer_rejected question=%r allowed=%s mentioned=%s",
+                normalized_question,
+                sorted(
+                    str(reference.get("file_path"))
+                    for reference in references
+                    if isinstance(reference, Mapping)
+                ),
+                sorted(self._extract_source_paths(answer)),
+            )
+            return self._no_evidence_result(retrieval_ms, inference_ms, verification_ms)
         verification_ms = self._elapsed_ms(verification_started_at)
         sources = [
             str(reference["file_path"])

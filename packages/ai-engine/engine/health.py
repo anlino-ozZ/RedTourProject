@@ -9,6 +9,8 @@ from pathlib import Path
 from typing import Any, Callable, TypedDict
 from urllib.request import urlopen
 
+from engine.cloud_infer import CloudLlmClient, LLM_PROVIDER_CLOUD, resolve_llm_provider
+
 
 class HealthSnapshot(TypedDict):
     """``/engine/health`` 接口响应。"""
@@ -16,6 +18,9 @@ class HealthSnapshot(TypedDict):
     status: str
     engine: str
     ollama: str
+    # 当前生效的 LLM 提供者与其可用状态：ollama 模式两者一致，cloud 模式看配置是否齐全
+    llmProvider: str
+    llm: str
     hailo: str
     wikiCount: int
 
@@ -33,6 +38,7 @@ class HealthChecker:
         timeout_seconds: float | None = None,
         url_opener: Callable[..., Any] = urlopen,
     ) -> None:
+        self.llm_provider = resolve_llm_provider()
         configured_ollama_host = ollama_host or os.getenv(
             "OLLAMA_HOST", "http://localhost:11434"
         )
@@ -67,20 +73,35 @@ class HealthChecker:
     def check(self) -> HealthSnapshot:
         """返回当前快照；依赖缺失时使用 ``degraded``，但不抛出异常。"""
         ollama_status = self._check_ollama()
+        llm_status = self._check_llm()
         hailo_status = self._check_hailo()
-        degraded = ollama_status != "active" or (
+        # 只有当前真正生效的 LLM 不可用才算降级：cloud 模式下不再要求本地 Ollama 在线
+        degraded = llm_status != "active" or (
             self.hailo_enabled and hailo_status != "active"
         )
         return {
             "status": "degraded" if degraded else "ok",
             "engine": "ai-engine",
             "ollama": ollama_status,
+            "llmProvider": self.llm_provider,
+            "llm": llm_status,
             "hailo": hailo_status,
             "wikiCount": self._count_wiki_entries(),
         }
 
+    def _check_llm(self) -> str:
+        """按当前 provider 检查真正生效的 LLM：cloud 只校验配置，不发起真实请求。"""
+        if self.llm_provider != LLM_PROVIDER_CLOUD:
+            return self._check_ollama()
+        try:
+            return "active" if CloudLlmClient().is_configured() else "missing_key"
+        except Exception:
+            return "unavailable"
+
     def _check_ollama(self) -> str:
         """探测 Ollama 服务及配置的模型是否已安装。"""
+        if self.llm_provider == LLM_PROVIDER_CLOUD:
+            return "not_used"
         try:
             with self._url_opener(
                 f"{self.ollama_host}/api/tags", timeout=self.timeout_seconds

@@ -159,11 +159,12 @@ function openEdit(row: AdminAchievementItem) {
   form.icon = row.icon || ''
   form.description = row.description || ''
   form.triggerType = row.triggerType
-  if (row.triggerCondition && Object.keys(row.triggerCondition).length > 0) {
-    form.conditionText = JSON.stringify(row.triggerCondition, null, 2)
+  const cond = parseCondition(row)
+  if (cond) {
+    form.conditionText = JSON.stringify(cond, null, 2)
     // 与当前类型默认模板完全一致则视为未自定义，切换类型时仍可自动跟随模板
     conditionTouched.value =
-      JSON.stringify(row.triggerCondition) !== JSON.stringify(parseTemplate(row.triggerType))
+      JSON.stringify(cond) !== JSON.stringify(parseTemplate(row.triggerType))
   } else {
     form.conditionText = conditionTemplates[row.triggerType]
     conditionTouched.value = false
@@ -249,9 +250,84 @@ function previewIcon(icon?: string) {
   return icon ? [resolveFileUrl(icon)] : []
 }
 
+/**
+ * 归一化触发条件：后端可能返回 JSON 对象，也可能返回 JSON 字符串，统一解析为对象。
+ * 解析失败或为空时返回 null。
+ */
+function parseCondition(row: AdminAchievementItem): Record<string, unknown> | null {
+  const raw = row.triggerCondition
+  if (!raw) return null
+  let cond: unknown = raw
+  if (typeof raw === 'string') {
+    try {
+      cond = JSON.parse(raw)
+    } catch {
+      return null
+    }
+  }
+  if (typeof cond !== 'object' || cond === null || Array.isArray(cond)) return null
+  const obj = cond as Record<string, unknown>
+  return Object.keys(obj).length > 0 ? obj : null
+}
+
+/** 触发条件原始 JSON（悬停 tooltip 展示） */
+function conditionJson(row: AdminAchievementItem) {
+  const cond = parseCondition(row)
+  if (!cond) return '—'
+  return JSON.stringify(cond)
+}
+
+/**
+ * 触发条件中文摘要（各字段约定见后端 AchievementEvaluationServiceImpl）：
+ *  - visit:  {"count": N, "spot_ids": [..]}
+ *  - checkin:{"spot_count": N, "scenic_area_id": X}
+ *  - script: {"completed": N, "script_id": X}
+ *  - pose:   {"pose": "salute"}
+ */
 function conditionSummary(row: AdminAchievementItem) {
-  if (!row.triggerCondition || Object.keys(row.triggerCondition).length === 0) return '—'
-  return JSON.stringify(row.triggerCondition)
+  const cond = parseCondition(row)
+  if (!cond) return '—'
+  const num = (v: unknown) => Number(v) || 0
+  switch (row.triggerType) {
+    case 'visit': {
+      const ids = Array.isArray(cond.spot_ids) ? (cond.spot_ids as unknown[]) : null
+      const need = cond.count != null ? num(cond.count) : 1
+      if (ids && ids.length > 0) return `在 ${ids.length} 个指定景点中完成 ${need} 个打卡`
+      if (cond.count != null) return `完成 ${need} 个景点打卡`
+      break
+    }
+    case 'checkin': {
+      const need = cond.spot_count != null ? num(cond.spot_count) : 1
+      return cond.scenic_area_id != null
+        ? `在景区(ID:${cond.scenic_area_id})完成 ${need} 个景点打卡`
+        : `在同一景区完成 ${need} 个景点打卡`
+    }
+    case 'script': {
+      const need = cond.completed != null ? num(cond.completed) : 1
+      return cond.script_id != null
+        ? `完成剧本(ID:${cond.script_id}) ${need} 次`
+        : `完成指定剧本 ${need} 次`
+    }
+    case 'pose':
+      return typeof cond.pose === 'string' && cond.pose
+        ? `完成姿态「${cond.pose}」识别`
+        : '完成指定姿态识别'
+  }
+  // route 或含未知字段：按「标签: 值」拼接兜底
+  const labels: Record<string, string> = {
+    route_id: '路线ID',
+    completed: '完成次数',
+    count: '次数',
+    spot_ids: '指定景点',
+    spot_count: '景点数',
+    scenic_area_id: '景区ID',
+    script_id: '剧本ID',
+    pose: '姿态',
+    type: '类型',
+  }
+  return Object.entries(cond)
+    .map(([k, v]) => `${labels[k] || k}: ${JSON.stringify(v)}`)
+    .join('，')
 }
 
 function formatTime(t: string) {
@@ -310,9 +386,15 @@ onMounted(() => {
           </el-tag>
         </template>
       </el-table-column>
-      <el-table-column label="触发条件" min-width="200" show-overflow-tooltip>
-        <template #default="{ row }">
-          <code class="achievement-page__condition">{{ conditionSummary(row) }}</code>
+      <el-table-column label="触发条件" min-width="200">
+        <template #default="{ row }: { row: AdminAchievementItem }">
+          <el-tooltip
+            :content="conditionJson(row)"
+            placement="top"
+            :disabled="conditionSummary(row) === '—'"
+          >
+            <code class="achievement-page__condition">{{ conditionSummary(row) }}</code>
+          </el-tooltip>
         </template>
       </el-table-column>
       <el-table-column label="创建时间" width="150">

@@ -8,6 +8,7 @@ numpy                        # 数值计算
 pydantic                     # 数据校验
 pydantic-settings            # 基于环境变量的配置管理
 markdown-it-py               # Markdown 渲染/解析（Wiki 页面处理）
+python-dotenv                # 读取 ai-engine/.env（云端 API Key 等配置，可选但推荐）
 pyttsx3                      # 本地离线 TTS，输出 WAV 音频
 faster-whisper               # 本地离线 STT（Whisper small）
 python-multipart             # FastAPI 音频 multipart 上传解析

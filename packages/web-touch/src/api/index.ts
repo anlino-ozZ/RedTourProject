@@ -1,4 +1,5 @@
 import request from './request'
+import { AI_REQUEST_TIMEOUT_MS, SHORT_REQUEST_TIMEOUT_MS } from './timeouts'
 import type {
   ScenicAreaInfo,
   PageResult,
@@ -31,9 +32,14 @@ export function getWikiDetail(id: number) {
   return request.get<unknown, WikiEntry>(`/admin/wiki/${id}`)
 }
 
-/** 智能问答（业务后端透传 AI 引擎，A-03） */
+/**
+ * 智能问答（业务后端透传 AI 引擎，A-03）
+ * 本地模型单次问答可达 110~215s，必须用问答专用超时，不能用 axios 默认 15s
+ */
 export function askQuestion(data: AskRequest) {
-  return request.post<unknown, AskResult>('/ask', data)
+  return request.post<unknown, AskResult>('/ask', data, {
+    timeout: AI_REQUEST_TIMEOUT_MS,
+  })
 }
 
 /**
@@ -46,7 +52,7 @@ export function speechToText(audio: Blob, filename = 'audio.webm') {
   form.append('audio', audio, filename)
   // 不手动设置 Content-Type：浏览器发送 FormData 时自动补 multipart boundary
   return request.post<unknown, SttResult>('/voice/stt', form, {
-    timeout: 30000,
+    timeout: SHORT_REQUEST_TIMEOUT_MS,
   })
 }
 

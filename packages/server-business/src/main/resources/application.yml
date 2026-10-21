@@ -43,7 +43,12 @@ jwt:
 ai-engine:
   base-url: http://localhost:8001
   connect-timeout-ms: 3000
-  read-timeout-ms: 30000
+  # 读超时必须长于"模型单次问答耗时"，且短于前端 axios 超时（web-h5 / web-touch 均为 330000ms），
+  # 否则后端先断开、前端只看到"网络异常"而拿不到降级文案。
+  # 参考耗时：云端模型（deepseek 等）规划+润色共两次调用约 5~10s；
+  #           本地 Ollama qwen2.5:7b 实测 110~215s。
+  # 默认 300s 按最慢的本地离线场景取值，切回 Ollama 时无需再改；纯云端部署可下调至 90000。
+  read-timeout-ms: ${AI_ENGINE_READ_TIMEOUT_MS:300000}
   stt-max-file-mb: ${STT_MAX_FILE_MB:20}
 
 pose:

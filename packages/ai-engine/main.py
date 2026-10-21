@@ -7,6 +7,7 @@ ai-engine 入口
 
 import asyncio
 import os
+from pathlib import Path
 
 import uvicorn
 from fastapi import FastAPI, File, HTTPException, Query, UploadFile, WebSocket, WebSocketDisconnect
@@ -42,6 +43,22 @@ app = FastAPI(
     description="LLM Wiki 知识问答 + YOLOv8-pose 姿态动作识别",
     version="0.1.0",
 )
+
+def _load_env_file() -> None:
+    """加载 ai-engine/.env 到环境变量。
+
+    依赖可选包 python-dotenv，未安装时跳过（可直接用系统环境变量替代）。
+    必须在创建下方模块级对象之前调用，否则 .env 中的 LLM_API_KEY 等配置读不到。
+    """
+    try:
+        from dotenv import load_dotenv
+    except ImportError:
+        print("[ai-engine] 未安装 python-dotenv，跳过 .env 加载，请改用系统环境变量")
+        return
+    load_dotenv(Path(__file__).with_name(".env"), override=False)
+
+
+_load_env_file()
 
 health_checker = HealthChecker()
 wiki_compiler = WikiCompiler(
@@ -273,5 +290,7 @@ def _positive_float_env(name: str, default: float) -> float:
 
 
 if __name__ == "__main__":
+    # 启动时回显当前生效的 LLM 提供者，便于确认是否误切到云端
+    print(f"[ai-engine] LLM_PROVIDER={os.getenv('LLM_PROVIDER', 'ollama').strip().lower()}")
     # 启动 uvicorn，监听 8001 端口
     uvicorn.run("main:app", host="0.0.0.0", port=8001, reload=True)
