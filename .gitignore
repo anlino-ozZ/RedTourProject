@@ -73,3 +73,5 @@ packages/*/package-lock.json
 public-common/package-lock.json
 # pnpm lock
 pnpm-lock.yaml
+packages/ai-engine/
+packages/server-business/uploads/audio/

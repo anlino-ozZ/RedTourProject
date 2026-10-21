@@ -33,7 +33,6 @@ import org.springframework.web.bind.annotation.RestController;
 @Validated
 @RestController
 @RequestMapping("/api/v1/admin/wiki")
-@RequireRole({"super_admin", "admin"})
 @RequiredArgsConstructor
 public class WikiEntryController {
 
@@ -56,6 +55,7 @@ public class WikiEntryController {
     }
 
     @PostMapping("/upload")
+    @RequireRole({"super_admin", "admin"})
     public ApiResponse<WikiEntryResult> upload(@Valid @RequestBody WikiUploadRequest request) {
         return ApiResponse.success(wikiEntryService.upload(request));
     }
@@ -66,6 +66,7 @@ public class WikiEntryController {
     }
 
     @PutMapping("/{id}")
+    @RequireRole({"super_admin", "admin"})
     public ApiResponse<WikiEntryResult> update(
             @PathVariable @Positive(message = "Wiki条目ID必须为正整数") Long id,
             @Valid @RequestBody WikiUpdateRequest request) {
@@ -73,12 +74,14 @@ public class WikiEntryController {
     }
 
     @PostMapping("/{id}/compile")
+    @RequireRole({"super_admin", "admin"})
     public ApiResponse<WikiEntryResult> compile(
             @PathVariable @Positive(message = "Wiki条目ID必须为正整数") Long id) {
         return ApiResponse.success(wikiEntryService.compile(id));
     }
 
     @DeleteMapping("/{id}")
+    @RequireRole({"super_admin", "admin"})
     public ApiResponse<Void> delete(@PathVariable @Positive(message = "Wiki条目ID必须为正整数") Long id) {
         wikiEntryService.delete(id);
         return ApiResponse.success(null);
